@@ -1,0 +1,13 @@
+{
+  "supported-platforms": { "squares": "shared" },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "zeuschat-logo.png",
+          "name": "ZeusChatLogo"
+        }
+      ]
+    }
+  ]
+}
