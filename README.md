@@ -72,9 +72,27 @@ npx expo export --platform ios
 # Full native build + simulator
 npx expo run:ios
 
-# Full native build + physical device
+# Full native build + physical device (debug — loads JS from Metro)
 npx expo run:ios --device
 ```
+
+### Release bundle — sideload a self‑contained app
+
+A debug build loads JS over Wi‑Fi from Metro, which means the phone needs `npx expo start` running on your Mac. A **Release** build bundles the JS directly into the binary — the app launches standalone with no Metro dependency:
+
+```bash
+# One‑shot: clean native project, then build & install in Release
+rm -rf ios && npx expo run:ios --device --configuration Release
+```
+
+After the first Release build, subsequent iterations (native‑only changes):
+
+```bash
+# Incremental release rebuild (no prebuild)
+npx expo run:ios --device --configuration Release
+```
+
+The full step‑by‑step walkthrough (pre‑requisites, free Apple ID, 7‑day cert limitations, trust the developer profile on the phone, troubleshooting) is in [`SIDELOAD.md`](./SIDELOAD.md).
 
 ---
 

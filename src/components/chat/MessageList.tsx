@@ -13,9 +13,10 @@ interface MessageListProps {
   onRegenerate: () => void;
   onEdit: (message: Message) => void;
   onDelete: (id: string) => void;
+  rawMode?: boolean;
 }
 
-export function MessageList({ onRegenerate, onEdit, onDelete }: MessageListProps) {
+export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }: MessageListProps) {
   const { colors } = useTheme();
   const messages = useChatStore((s) => s.messages);
   const streamingText = useChatStore((s) => s.streamingText);
@@ -74,6 +75,7 @@ export function MessageList({ onRegenerate, onEdit, onDelete }: MessageListProps
           onRegenerate={onRegenerate}
           onEdit={onEdit}
           onDelete={onDelete}
+          rawMode={rawMode}
         />
       )}
       onScroll={onScroll}
@@ -93,6 +95,5 @@ export function MessageList({ onRegenerate, onEdit, onDelete }: MessageListProps
 const styles = StyleSheet.create({
   content: {
     paddingVertical: 12,
-    flexGrow: 1,
   },
 });

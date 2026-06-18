@@ -2,7 +2,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { setStringAsync } from 'expo-clipboard';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
-import { ScrollView as GestureHandlerScrollView } from 'react-native-gesture-handler';
 
 import { Fonts, Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
@@ -109,7 +108,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           </Text>
         </Pressable>
       </View>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled contentContainerStyle={{ flexGrow: 0 }}>
         <Text
           selectable
           style={{
@@ -139,8 +138,7 @@ function TableBlock({
 }) {
   const { colors } = useTheme();
   return (
-    <GestureHandlerScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View style={[styles.table, { borderColor: colors.border }]}>
+    <View style={[styles.table, { borderColor: colors.border }]}>
         {/* Header row */}
         <View style={[styles.tableRow, { backgroundColor: colors.codeBackground }]}>
           {headers.map((h, ci) => (
@@ -173,7 +171,6 @@ function TableBlock({
           </View>
         ))}
       </View>
-    </GestureHandlerScrollView>
   );
 }
 
@@ -456,6 +453,6 @@ const styles = StyleSheet.create({
   /* table */
   table: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.md, overflow: 'hidden', marginVertical: Spacing.xs },
   tableRow: { flexDirection: 'row' },
-  tableCell: { minWidth: 104, maxWidth: 260, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm - 2, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
+  tableCell: { flex: 1, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm - 2, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
   tableCellHead: { borderBottomWidth: 1 },
 });

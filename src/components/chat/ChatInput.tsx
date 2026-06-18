@@ -1,5 +1,6 @@
 import { impactAsync, ImpactFeedbackStyle } from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import * as Device from 'expo-device';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -41,14 +42,14 @@ export function ChatInput({
   const handleSend = () => {
     const value = text.trim();
     if (!value || isStreaming) return;
-    impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
+    if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
     Promise.resolve(onSend(value)).catch(console.error);
     setText('');
     setHeight(0);
   };
 
   const handleStop = () => {
-    impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
+    if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
     onCancel();
   };
 

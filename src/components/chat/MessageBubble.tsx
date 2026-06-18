@@ -1,5 +1,6 @@
 import { impactAsync, ImpactFeedbackStyle } from 'expo-haptics';
 import { setStringAsync } from 'expo-clipboard';
+import * as Device from 'expo-device';
 import { memo, useEffect, useRef } from 'react';
 import { Alert, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -16,6 +17,7 @@ interface MessageBubbleProps {
   message: DisplayMessage;
   isLast: boolean;
   isStreaming: boolean;
+  rawMode?: boolean;
   onRegenerate?: () => void;
   onEdit?: (message: Message) => void;
   onDelete?: (id: string) => void;
@@ -43,6 +45,7 @@ function MessageBubbleImpl({
   message,
   isLast,
   isStreaming,
+  rawMode = false,
   onRegenerate,
   onEdit,
   onDelete,
@@ -53,7 +56,7 @@ function MessageBubbleImpl({
   const empty = !message.content;
 
   const showMenu = () => {
-    impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
+    if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
     const buttons: { text: string; onPress?: () => void; style?: 'destructive' | 'cancel' }[] = [
       { text: 'Copy', onPress: () => setStringAsync(message.content).catch(() => {}) },
     ];
@@ -85,6 +88,20 @@ function MessageBubbleImpl({
           <Text selectable style={{ color: colors.userBubbleText, ...Typography.body }}>
             {message.content}
           </Text>
+        ) : rawMode ? (
+          <View>
+            <Text
+              selectable
+              style={{
+                color: colors.assistantBubbleText,
+                fontFamily: Fonts.mono,
+                fontSize: 13,
+                lineHeight: 19,
+              }}>
+              {message.content}
+            </Text>
+            {streaming && !empty && <Caret />}
+          </View>
         ) : (
           <View>
             <MarkdownRenderer content={message.content} />
@@ -103,6 +120,7 @@ export const MessageBubble = memo(MessageBubbleImpl, (prev, next) => {
     prev.message.content === next.message.content &&
     prev.isLast === next.isLast &&
     prev.isStreaming === next.isStreaming &&
+    prev.rawMode === next.rawMode &&
     prev.onRegenerate === next.onRegenerate &&
     prev.onEdit === next.onEdit &&
     prev.onDelete === next.onDelete

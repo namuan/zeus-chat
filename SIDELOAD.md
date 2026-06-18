@@ -94,7 +94,7 @@ npx expo run:ios --device
 A debug build loads JS from Metro over Wi-Fi. For an app that runs fully offline/standalone, bundle the JS into the binary:
 
 ```bash
-npx expo run:ios --device --variant release
+npx expo run:ios --device --configuration Release
 ```
 
 This still uses your free dev cert (same 7-day limit) but the app launches without needing Metro running.
@@ -173,7 +173,7 @@ A `preview` profile uses ad-hoc distribution (lasts up to a year) and requires t
 
 **App launches but shows a red/white screen ("No bundle URL present")**
 - Debug build can't reach Metro. Ensure Mac and iPhone are on the same Wi-Fi, no VPN blocking local traffic, and Metro is running (`npx expo start --dev-client`).
-- Or build the self-contained variant: `npx expo run:ios --device --variant release`.
+- Or build the self-contained variant: `npx expo run:ios --device --configuration Release`.
 
 **App builds but immediately crashes**
 - A native module changed since the last build. Rebuild native: `npx expo run:ios --device`. If still failing, reset the native project: `rm -rf ios && npx expo run:ios --device` (re-runs prebuild).

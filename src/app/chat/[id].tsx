@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, router } from 'expo-router';
+import { setStringAsync } from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useLayoutEffect, useState } from 'react';
@@ -44,18 +45,35 @@ export default function ChatScreen() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: string; text: string } | null>(null);
+  const [rawMode, setRawMode] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: activeChat?.title ?? 'Chat',
       headerRight: () => (
         <View style={styles.headerActions}>
-          <IconButton name="create-outline" size={24} accessibilityLabel="Rename chat" onPress={() => setRenameOpen(true)} />
-          <IconButton name="ellipsis-vertical" size={24} accessibilityLabel="Chat options" onPress={() => setMenuVisible(true)} />
+          <IconButton
+            name="create-outline"
+            size={24}
+            accessibilityLabel="Rename chat"
+            onPress={() => setRenameOpen(true)}
+          />
+          <IconButton
+            name={rawMode ? 'eye-outline' : 'code-slash-outline'}
+            size={24}
+            accessibilityLabel={rawMode ? 'View rendered' : 'View raw markdown'}
+            onPress={() => setRawMode((v) => !v)}
+          />
+          <IconButton
+            name="ellipsis-vertical"
+            size={24}
+            accessibilityLabel="Chat options"
+            onPress={() => setMenuVisible(true)}
+          />
         </View>
       ),
     });
-  }, [navigation, activeChat?.title]);
+  }, [navigation, activeChat?.title, rawMode]);
 
   const exportChat = async (kind: 'md' | 'json') => {
     try {
@@ -95,7 +113,22 @@ export default function ChatScreen() {
     ]);
   };
 
+  const copyAllAsMarkdown = async () => {
+    try {
+      const md = await chatToMarkdown(id);
+      if (!md) {
+        Alert.alert('Nothing to copy', 'This chat has no messages yet.');
+        return;
+      }
+      await setStringAsync(md);
+      Alert.alert('Copied', 'Full chat markdown copied to clipboard.');
+    } catch (e) {
+      Alert.alert('Copy failed', (e as Error)?.message ?? 'Could not copy chat.');
+    }
+  };
+
   const menuItems: ActionItem[] = [
+    { label: 'Copy all as Markdown', icon: 'copy-outline', onPress: () => copyAllAsMarkdown().catch(console.error) },
     { label: 'Export as Markdown', icon: 'document-text-outline', onPress: () => exportChat('md').catch(console.error) },
     { label: 'Export as JSON', icon: 'code-slash-outline', onPress: () => exportChat('json').catch(console.error) },
     { label: 'Delete chat', icon: 'trash-outline', destructive: true, onPress: () => { setMenuVisible(false); confirmDelete(); } },
@@ -127,7 +160,7 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.select({ ios: 60, default: 0 })}>
       <View style={{ flex: 1 }}>
-        <MessageList onRegenerate={onRegenerate} onEdit={onEditMessage} onDelete={onDeleteMessage} />
+        <MessageList onRegenerate={onRegenerate} onEdit={onEditMessage} onDelete={onDeleteMessage} rawMode={rawMode} />
       </View>
 
       {error ? (
