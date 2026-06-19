@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { setStringAsync } from 'expo-clipboard';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
 import { Fonts, Radius, Spacing, Typography } from '@/constants/theme';
@@ -125,55 +125,6 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   );
 }
 
-/* -------------------------------- table block ------------------------------ */
-
-function TableBlock({
-  headers,
-  align,
-  rows,
-}: {
-  headers: string[];
-  align: ('left' | 'center' | 'right')[];
-  rows: string[][];
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={[styles.table, { borderColor: colors.border }]}>
-        {/* Header row */}
-        <View style={[styles.tableRow, { backgroundColor: colors.codeBackground }]}>
-          {headers.map((h, ci) => (
-            <View key={ci} style={[styles.tableCell, styles.tableCellHead, { borderColor: colors.border }]}>
-              <Text
-                style={{ fontWeight: '700', fontSize: 13.5, lineHeight: 19, color: colors.text }}>
-                {renderInline(h, colors)}
-              </Text>
-            </View>
-          ))}
-        </View>
-        {/* Data rows */}
-        {rows.map((row, ri) => (
-          <View
-            key={ri}
-            style={[styles.tableRow, ri % 2 === 1 ? { backgroundColor: colors.surface } : {}]}>
-            {row.map((cell, ci) => (
-              <View key={ci} style={[styles.tableCell, { borderColor: colors.border }]}>
-                <Text
-                  style={{
-                    fontSize: 13.5,
-                    lineHeight: 19,
-                    color: colors.text,
-                    textAlign: align[ci] === 'right' ? 'right' : align[ci] === 'center' ? 'center' : 'left',
-                  }}>
-                  {renderInline(cell, colors)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ))}
-      </View>
-  );
-}
-
 /* ---------------------------------- blocks --------------------------------- */
 
 const HEADING_SIZES: Record<number, TextStyle> = {
@@ -186,49 +137,11 @@ const HEADING_SIZES: Record<number, TextStyle> = {
 };
 
 interface Block {
-  type: 'code' | 'heading' | 'blockquote' | 'ul' | 'ol' | 'hr' | 'para' | 'spacer' | 'table';
+  type: 'code' | 'heading' | 'blockquote' | 'ul' | 'ol' | 'hr' | 'para' | 'spacer';
   level?: number;
   lang?: string;
   text?: string;
   items?: string[];
-  headers?: string[];
-  align?: ('left' | 'center' | 'right')[];
-  rows?: string[][];
-}
-
-/* ------------------------------- table helpers ------------------------------ */
-
-/** Split a `| col1 | col2 |` line into trimmed cell strings. */
-function splitTableRow(line: string): string[] {
-  const cells = line.split('|').map((c) => c.trim());
-  // Strip the leading empty cell if the row starts with '|'.
-  if (line.trimStart().startsWith('|')) cells.shift();
-  // Strip the trailing empty cell if the row ends with '|'.
-  if (line.trimEnd().endsWith('|') && cells.length) cells.pop();
-  return cells;
-}
-
-function isSeparatorLine(line: string): boolean {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(line);
-}
-
-function isTableLine(line: string): boolean {
-  return line.includes('|');
-}
-
-function parseAlign(cell: string): 'left' | 'center' | 'right' {
-  const t = cell.trim();
-  const l = t.startsWith(':');
-  const r = t.endsWith(':');
-  if (l && r) return 'center';
-  if (r) return 'right';
-  return 'left';
-}
-
-function alignToFlex(a?: string): 'flex-start' | 'center' | 'flex-end' {
-  if (a === 'center') return 'center';
-  if (a === 'right') return 'flex-end';
-  return 'flex-start';
 }
 
 function parseBlocks(source: string): Block[] {
@@ -309,25 +222,6 @@ function parseBlocks(source: string): Block[] {
       continue;
     }
 
-    // Table — line contains '|' and the very next line is a separator
-    if (
-      isTableLine(line) &&
-      i + 1 < lines.length &&
-      isSeparatorLine(lines[i + 1])
-    ) {
-      const headers = splitTableRow(line);
-      const alignCells = splitTableRow(lines[i + 1]);
-      const align = headers.map((_, ci) => parseAlign(alignCells[ci] || '---'));
-      i += 2; // consume header + separator
-      const rows: string[][] = [];
-      while (i < lines.length && isTableLine(lines[i])) {
-        rows.push(splitTableRow(lines[i]));
-        i++;
-      }
-      blocks.push({ type: 'table', headers, align, rows });
-      continue;
-    }
-
     // Paragraph: gather until a blank line or a block-starting line.
     const buf: string[] = [line];
     i++;
@@ -339,8 +233,7 @@ function parseBlocks(source: string): Block[] {
       !/^\s*>\s?/.test(lines[i]) &&
       !/^\s*[-*+]\s+/.test(lines[i]) &&
       !/^\s*\d+\.\s+/.test(lines[i]) &&
-      !/^\s*([-*_])\1{2,}\s*$/.test(lines[i]) &&
-      !isTableLine(lines[i])
+      !/^\s*([-*_])\1{2,}\s*$/.test(lines[i])
     ) {
       buf.push(lines[i]);
       i++;
@@ -355,7 +248,7 @@ function parseBlocks(source: string): Block[] {
 
 export function MarkdownRenderer({ content }: { content: string }) {
   const { colors } = useTheme();
-  const blocks = parseBlocks(content);
+  const blocks = useMemo(() => parseBlocks(content), [content]);
 
   return (
     <View style={styles.container}>
@@ -407,15 +300,6 @@ export function MarkdownRenderer({ content }: { content: string }) {
             );
           case 'hr':
             return <View key={idx} style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: Spacing.md }} />;
-          case 'table':
-            return (
-              <TableBlock
-                key={idx}
-                headers={block.headers ?? []}
-                align={block.align ?? []}
-                rows={block.rows ?? []}
-              />
-            );
           case 'spacer':
             return <View key={idx} style={{ height: Spacing.sm }} />;
           case 'para':
@@ -450,9 +334,4 @@ const styles = StyleSheet.create({
   copyBtn: { flexDirection: 'row', alignItems: 'center' },
   list: { gap: Spacing.xs, marginVertical: Spacing.xs },
   listItem: { flexDirection: 'row', alignItems: 'flex-start' },
-  /* table */
-  table: { borderWidth: StyleSheet.hairlineWidth, borderRadius: Radius.md, overflow: 'hidden', marginVertical: Spacing.xs },
-  tableRow: { flexDirection: 'row' },
-  tableCell: { flex: 1, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm - 2, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
-  tableCellHead: { borderBottomWidth: 1 },
 });

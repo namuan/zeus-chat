@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Keyboard, type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet } from 'react-native';
+import { Keyboard, ScrollView, StyleSheet } from 'react-native';
 
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -22,9 +22,7 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
   const streamingText = useChatStore((s) => s.streamingText);
   const isStreaming = useChatStore((s) => s.isStreaming);
 
-  const listRef = useRef<FlatList>(null);
-  const [atBottom, setAtBottom] = useState(true);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const data: DisplayMessage[] = isStreaming
     ? [
@@ -41,54 +39,52 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
     : messages;
 
   const scrollToBottom = useCallback(() => {
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: false });
-    }, 16);
+    // Small delay so new content has been laid out before we ask the
+    // ScrollView for its final offset.
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    });
   }, []);
 
-  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  // Only auto-scroll when the user is already near the bottom.
+  const isAtBottom = useRef(true);
+  const onScroll = useCallback((e: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-    const distanceFromEnd = contentSize.height - contentOffset.y - layoutMeasurement.height;
-    setAtBottom(distanceFromEnd < 100);
+    const d = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    isAtBottom.current = d < 100;
   }, []);
 
-  // Follow new tokens / new messages only if the user is already at the bottom.
   useEffect(() => {
-    if (atBottom) scrollToBottom();
-  }, [streamingText, messages.length, atBottom, scrollToBottom]);
+    if (isAtBottom.current) scrollToBottom();
+  }, [streamingText, messages.length, scrollToBottom]);
 
   if (messages.length === 0 && !isStreaming) {
     return <EmptyState />;
   }
 
   return (
-    <FlatList
-      ref={listRef}
-      data={data}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item, index }) => (
+    <ScrollView
+      ref={scrollRef}
+      onScroll={onScroll}
+      scrollEventThrottle={32}
+      onScrollBeginDrag={() => Keyboard.dismiss()}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={[styles.content, { backgroundColor: colors.background }]}
+      style={{ backgroundColor: colors.background }}>
+      {data.map((msg, idx) => (
         <MessageBubble
-          message={item}
-          isLast={index === data.length - 1}
+          key={msg.id}
+          message={msg}
+          isLast={idx === data.length - 1}
           isStreaming={isStreaming}
           onRegenerate={onRegenerate}
           onEdit={onEdit}
           onDelete={onDelete}
           rawMode={rawMode}
         />
-      )}
-      onScroll={onScroll}
-      scrollEventThrottle={32}
-      onContentSizeChange={() => {
-        if (atBottom) scrollToBottom();
-      }}
-      onScrollBeginDrag={() => Keyboard.dismiss()}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.content, { backgroundColor: colors.background }]}
-      style={{ backgroundColor: colors.background }}
-    />
+      ))}
+    </ScrollView>
   );
 }
 
