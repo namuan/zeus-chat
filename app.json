@@ -33,7 +33,12 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0B0B0C",
-          "image": "./assets/images/zeuschat-logo.png"
+          "image": "./assets/images/logo-glow.png",
+          "imageResizeMode": "contain",
+          "darkMode": {
+            "backgroundColor": "#0B0B0C",
+            "image": "./assets/images/logo-glow.png"
+          }
         }
       ]
     ],

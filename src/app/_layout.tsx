@@ -1,11 +1,12 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { SplashOverlay } from '@/components/SplashOverlay';
 import { useTheme } from '@/hooks/useTheme';
 import { initDb } from '@/lib/sqlite';
 
@@ -15,22 +16,35 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 
 export default function RootLayout() {
   const { colors, isDark } = useTheme();
+  const [dbReady, setDbReady] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(true);
 
+  // Hide the native splash once our custom overlay is mounted
   useEffect(() => {
-    let ready = false;
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
+  // Initialise the database
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         await initDb();
       } catch (e) {
         console.warn('[db] init failed', e);
       } finally {
-        ready = true;
-        SplashScreen.hideAsync().catch(() => {});
+        if (!cancelled) {
+          setDbReady(true);
+        }
       }
     })();
     return () => {
-      void ready;
+      cancelled = true;
     };
+  }, []);
+
+  const handleOverlayFinish = useCallback(() => {
+    setShowOverlay(false);
   }, []);
 
   return (
@@ -63,6 +77,13 @@ export default function RootLayout() {
               <Stack.Screen name="+not-found" options={{ headerShown: false }} />
             </Stack>
           </ErrorBoundary>
+
+          {showOverlay && (
+            <SplashOverlay
+              ready={dbReady}
+              onFinish={handleOverlayFinish}
+            />
+          )}
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
