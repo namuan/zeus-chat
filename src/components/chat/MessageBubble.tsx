@@ -89,9 +89,16 @@ function MessageBubbleImpl({
         {streaming && empty ? (
           <LoadingDots />
         ) : isUser ? (
-          <Text selectable style={{ color: colors.userBubbleText, ...Typography.body }}>
-            {message.content}
-          </Text>
+          <View>
+            <Text selectable style={{ color: colors.userBubbleText, ...Typography.body }}>
+              {message.content}
+            </Text>
+            {message.queued && (
+              <View style={styles.queuedTag}>
+                <Text style={styles.queuedTagText}>Queued</Text>
+              </View>
+            )}
+          </View>
         ) : rawMode ? (
           <View>
             <Text
@@ -154,5 +161,19 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     marginTop: 3,
     marginHorizontal: 4,
+  },
+  queuedTag: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  queuedTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.3,
   },
 });

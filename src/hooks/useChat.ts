@@ -2,6 +2,8 @@ import { useCallback, useEffect } from 'react';
 
 import { useChatStore } from '@/features/chat/chat.store';
 import {
+  cancelAndClear as serviceCancelAndClear,
+  cancelStream as serviceCancelStream,
   deleteChat as serviceDeleteChat,
   deleteMessage as serviceDeleteMessage,
   editAndResend as serviceEditAndResend,
@@ -10,43 +12,75 @@ import {
   renameChat as serviceRenameChat,
   sendMessage as serviceSendMessage,
 } from '@/features/chat/chat.service';
-import { useStreaming } from '@/hooks/useStreaming';
 
 /**
  * The chat screen's primary hook. Wires the active-session store to the
- * streaming controller and the chat service. Streaming state (tokens) is
- * intentionally NOT returned here — `MessageList` subscribes to that
- * directly so the rest of the screen doesn't re-render per token.
+ * chat service. Streaming state (tokens) is intentionally NOT returned here
+ * — `MessageList` subscribes to that directly so the rest of the screen
+ * doesn't re-render per token. The AbortController is now managed inside
+ * chat.service.ts, so queued messages can auto-send on the same controller.
  */
 export function useChat(chatId: string) {
   const activeChat = useChatStore((s) => s.activeChat);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const error = useChatStore((s) => s.error);
+  const queuedMessages = useChatStore((s) => s.queuedMessages);
 
-  const { newSignal, cancel } = useStreaming();
-
-  // (Re)load when the chat changes; abort + clear on unmount/switch.
+  // (Re)load when the chat changes; cancel stream + clear queue on unmount/switch.
   useEffect(() => {
     loadChat(chatId);
     return () => {
-      cancel();
+      serviceCancelAndClear();
       useChatStore.getState().clearActive();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
   const send = useCallback(
     async (text: string) => {
-      const signal = newSignal();
-      await serviceSendMessage(chatId, text, signal);
+      await serviceSendMessage(chatId, text);
     },
-    [chatId, newSignal],
+    [chatId],
+  );
+
+  /** Queue a message for later sending (while a response is in progress). */
+  const queue = useCallback(
+    (text: string) => {
+      useChatStore.getState().enqueueMessage(text);
+    },
+    [],
+  );
+
+  /** Remove a specific queued message by index. */
+  const removeQueuedMessage = useCallback(
+    (index: number) => {
+      useChatStore.getState().removeQueuedMessage(index);
+    },
+    [],
+  );
+
+  /** Clear all queued messages without sending them. */
+  const clearQueue = useCallback(
+    () => {
+      useChatStore.getState().clearQueue();
+    },
+    [],
+  );
+
+  /** Send all queued messages now. The first one kicks off the chain. */
+  const sendQueuedAll = useCallback(
+    async () => {
+      const store = useChatStore.getState();
+      const first = store.dequeueMessage();
+      if (first) {
+        await serviceSendMessage(chatId, first);
+      }
+    },
+    [chatId],
   );
 
   const regenerate = useCallback(async () => {
-    const signal = newSignal();
-    await serviceRegenerate(chatId, signal);
-  }, [chatId, newSignal]);
+    await serviceRegenerate(chatId);
+  }, [chatId]);
 
   const rename = useCallback(
     async (title: string) => {
@@ -56,20 +90,23 @@ export function useChat(chatId: string) {
   );
 
   const deleteChat = useCallback(async () => {
-    cancel();
+    serviceCancelStream();
     await serviceDeleteChat(chatId);
-  }, [chatId, cancel]);
+  }, [chatId]);
 
   const editAndResend = useCallback(
     async (messageId: string, newText: string) => {
-      const signal = newSignal();
-      await serviceEditAndResend(chatId, messageId, newText, signal);
+      await serviceEditAndResend(chatId, messageId, newText);
     },
-    [chatId, newSignal],
+    [chatId],
   );
 
   const deleteMessage = useCallback(async (messageId: string) => {
     await serviceDeleteMessage(messageId);
+  }, []);
+
+  const cancel = useCallback(() => {
+    serviceCancelStream();
   }, []);
 
   const reload = useCallback(() => loadChat(chatId), [chatId]);
@@ -78,7 +115,12 @@ export function useChat(chatId: string) {
     activeChat,
     isStreaming,
     error,
+    queuedMessages,
     send,
+    queue,
+    removeQueuedMessage,
+    clearQueue,
+    sendQueuedAll,
     regenerate,
     cancel,
     rename,

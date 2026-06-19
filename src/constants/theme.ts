@@ -42,6 +42,8 @@ export const Colors = {
     // Status
     danger: '#D7393B',
     dangerSurface: '#FDEDED',
+    warning: '#D48A00',
+    warningText: '#FFFFFF',
     success: '#1F9D63',
 
     // Code
@@ -75,6 +77,8 @@ export const Colors = {
 
     danger: '#FF453A',
     dangerSurface: '#3A1C1C',
+    warning: '#F0A000',
+    warningText: '#1C1C1E',
     success: '#30D158',
 
     codeBackground: '#161617',

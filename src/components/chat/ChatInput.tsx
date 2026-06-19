@@ -9,8 +9,10 @@ import { useTheme } from '@/hooks/useTheme';
 
 interface ChatInputProps {
   onSend: (text: string) => void | Promise<void>;
+  onQueue: (text: string) => void;
   onCancel: () => void;
   isStreaming: boolean;
+  queuedCount: number;
   initialText?: string;
   placeholder?: string;
 }
@@ -19,8 +21,10 @@ const MAX_HEIGHT = 140;
 
 export function ChatInput({
   onSend,
+  onQueue,
   onCancel,
   isStreaming,
+  queuedCount,
   initialText,
   placeholder = 'Message…',
 }: ChatInputProps) {
@@ -37,13 +41,18 @@ export function ChatInput({
     }
   }, [initialText]);
 
-  const canSend = text.trim().length > 0 && !isStreaming;
+  const canSend = text.trim().length > 0;
 
   const handleSend = () => {
     const value = text.trim();
-    if (!value || isStreaming) return;
+    if (!value) return;
     if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
-    Promise.resolve(onSend(value)).catch(console.error);
+    if (isStreaming) {
+      // While a response is in progress, queue the message instead of blocking.
+      Promise.resolve(onQueue(value)).catch(console.error);
+    } else {
+      Promise.resolve(onSend(value)).catch(console.error);
+    }
     setText('');
     setHeight(0);
   };
@@ -75,27 +84,60 @@ export function ChatInput({
         />
       </View>
 
-      {isStreaming ? (
-        <Pressable
-          onPress={handleStop}
-          accessibilityLabel="Stop generating"
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.sendBtn, { backgroundColor: colors.danger, opacity: pressed ? 0.8 : 1 }]}>
-          <Ionicons name="stop" size={18} color="#FFFFFF" />
-        </Pressable>
-      ) : (
-        <Pressable
-          onPress={handleSend}
-          disabled={!canSend}
-          accessibilityLabel="Send message"
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.sendBtn,
-            { backgroundColor: canSend ? colors.accent : colors.surface, opacity: canSend ? (pressed ? 0.8 : 1) : 1 },
-          ]}>
-          <Ionicons name="arrow-up" size={20} color={canSend ? colors.accentText : colors.textMuted} />
-        </Pressable>
-      )}
+      <View style={styles.actions}>
+        {isStreaming ? (
+          <>
+            {/* Queue button — replaces send as the primary action while streaming */}
+            <Pressable
+              onPress={handleSend}
+              disabled={!canSend}
+              accessibilityLabel={queuedCount > 0 ? `${queuedCount} queued` : 'Queue message'}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.queueBtn,
+                {
+                  backgroundColor: canSend ? colors.warning : colors.surface,
+                  opacity: canSend ? (pressed ? 0.8 : 1) : 1,
+                },
+              ]}>
+              <Ionicons
+                name="time-outline"
+                size={18}
+                color={canSend ? colors.warningText : colors.textMuted}
+              />
+              {queuedCount > 0 && (
+                <View style={styles.queueBadge}>
+                  <Text style={styles.queueBadgeText}>{queuedCount}</Text>
+                </View>
+              )}
+            </Pressable>
+
+            {/* Small stop button — secondary action */}
+            <Pressable
+              onPress={handleStop}
+              accessibilityLabel="Stop generating"
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.stopBtn, { opacity: pressed ? 0.6 : 1 }]}>
+              <Ionicons name="stop" size={14} color={colors.danger} />
+            </Pressable>
+          </>
+        ) : (
+          <Pressable
+            onPress={handleSend}
+            disabled={!canSend}
+            accessibilityLabel="Send message"
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.sendBtn,
+              {
+                backgroundColor: canSend ? colors.accent : colors.surface,
+                opacity: canSend ? (pressed ? 0.8 : 1) : 1,
+              },
+            ]}>
+            <Ionicons name="arrow-up" size={20} color={canSend ? colors.accentText : colors.textMuted} />
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -125,12 +167,50 @@ const styles = StyleSheet.create({
     margin: 0,
     textAlignVertical: 'center',
   },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    marginBottom: 2,
+  },
   sendBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+  },
+  queueBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  queueBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#D7393B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  queueBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  stopBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(215, 57, 59, 0.1)',
   },
 });

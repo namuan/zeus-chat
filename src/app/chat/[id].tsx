@@ -29,7 +29,12 @@ export default function ChatScreen() {
     activeChat,
     isStreaming,
     error,
+    queuedMessages,
     send,
+    queue,
+    removeQueuedMessage,
+    clearQueue,
+    sendQueuedAll,
     regenerate,
     cancel,
     rename,
@@ -149,8 +154,8 @@ export default function ChatScreen() {
   );
 
   const onRegenerate = useCallback(() => {
-    if (!isStreaming) regenerate().catch(console.error);
-  }, [isStreaming, regenerate]);
+    regenerate().catch(console.error);
+  }, [regenerate]);
 
   const dismissError = () => useChatStore.getState().setError(null);
 
@@ -178,8 +183,36 @@ export default function ChatScreen() {
         </View>
       ) : null}
 
+      {queuedMessages.length > 0 ? (
+        <View style={[styles.queueBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+          <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+          <Text style={[Typography.caption, { color: colors.textSecondary, flex: 1 }]}>
+            {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
+          </Text>
+          <Pressable
+            onPress={() => sendQueuedAll().catch(console.error)}
+            disabled={isStreaming}
+            hitSlop={8}
+            style={({ pressed }) => [styles.queueActionBtn, { opacity: pressed ? 0.7 : 1 }]}>
+            <Text style={[Typography.caption, { color: isStreaming ? colors.textMuted : colors.accent, fontWeight: '600' }]}>
+              Send all
+            </Text>
+          </Pressable>
+          <Pressable onPress={clearQueue} hitSlop={8} style={({ pressed }) => [styles.queueActionBtn, { opacity: pressed ? 0.7 : 1 }]}>
+            <Text style={[Typography.caption, { color: colors.textMuted, fontWeight: '500' }]}>Clear</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={{ paddingBottom: insets.bottom }}>
-        <ChatInput onSend={send} onCancel={cancel} isStreaming={isStreaming} initialText={initialPrompt} />
+        <ChatInput
+          onSend={send}
+          onQueue={queue}
+          onCancel={cancel}
+          isStreaming={isStreaming}
+          queuedCount={queuedMessages.length}
+          initialText={initialPrompt}
+        />
       </View>
 
       <PromptModal
@@ -227,5 +260,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderTopWidth: 1,
+  },
+  queueBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  queueActionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
 });
