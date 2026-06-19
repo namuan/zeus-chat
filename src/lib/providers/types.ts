@@ -1,5 +1,19 @@
 import type { StreamError } from '@/features/chat/chat.types';
 
+/** A normalized model entry returned by a provider's models endpoint. */
+export interface ModelInfo {
+  /** Model ID to pass to the chat completions API (e.g. "openai/gpt-4o"). */
+  id: string;
+  /** Human-readable display name. */
+  name: string;
+  /** Whether the model is completely free (zero cost per token). */
+  free: boolean;
+  /** Maximum context window in tokens, if known. */
+  contextLength?: number;
+  /** Short description, if available. */
+  description?: string;
+}
+
 /** Configuration for a single AI provider. */
 export interface ProviderConfig {
   /** Unique identifier, e.g. 'openrouter' or 'requesty'. */
@@ -20,6 +34,8 @@ export interface ProviderConfig {
   modelPlaceholder?: string;
   /** Optional: override the model hint text in the settings UI. */
   modelHint?: string;
+  /** Optional: GET endpoint to list available models. */
+  modelsUrl?: string;
 }
 
 export interface StreamChatArgs {

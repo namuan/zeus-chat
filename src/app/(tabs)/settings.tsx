@@ -15,8 +15,9 @@ import { PROVIDER_LIST, getProvider } from '@/lib/providers/registry';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { fileStamp } from '@/utils/time';
+import { ModelPicker } from '@/components/ui/ModelPicker';
 
-function SectionHeader({ children }: { children: string }) {
+function SectionHeader({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
   return (
     <Text style={[Typography.caption, { color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>
@@ -107,11 +108,18 @@ export default function SettingsScreen() {
   const [modelDraft, setModelDraft] = useState(currentModel);
   const [maskedKey, setMaskedKey] = useState('');
   const [keyPresent, setKeyPresent] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showCustomModel, setShowCustomModel] = useState(false);
 
-  // Sync modelDraft when the provider changes.
+  // Sync modelDraft when the provider changes or custom mode re-opens.
   useEffect(() => {
     setModelDraft(models[providerId] ?? provider.defaultModel);
   }, [providerId, provider.defaultModel, models]);
+
+  // When the provider changes, leave custom mode so the picker shows.
+  useEffect(() => {
+    setShowCustomModel(false);
+  }, [providerId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -180,10 +188,23 @@ export default function SettingsScreen() {
   };
 
   const removeKey = () => {
-    Alert.alert('Remove API key?', `You’ll need to re-enter a key for ${provider.name} to chat again.`, [
+    Alert.alert('Remove API key?', `You'll need to re-enter a key for ${provider.name} to chat again.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => router.push(`/onboarding/api-key?mode=edit&clear=1&provider=${providerId}`) },
     ]);
+  };
+
+  const handleSelectModel = (modelId: string) => {
+    setModel(modelId);
+    setShowCustomModel(false);
+  };
+
+  const handleOpenPicker = () => {
+    setShowPicker(true);
+  };
+
+  const handleCustomModel = () => {
+    setShowCustomModel(true);
   };
 
   return (
@@ -208,21 +229,57 @@ export default function SettingsScreen() {
       </View>
 
       <SectionHeader>Model ({provider.name})</SectionHeader>
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <TextInput
-          value={modelDraft}
-          onChangeText={setModelDraft}
-          onBlur={() => setModel(modelDraft)}
-          placeholder={provider.modelPlaceholder ?? provider.defaultModel}
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={[Typography.body, { color: colors.text, fontFamily: 'monospace' }]}
-        />
-        <Text style={[Typography.caption, { color: colors.textMuted, marginTop: Spacing.sm }]}>
-          {provider.modelHint ?? `The ${provider.name} model id. Defaults to "${provider.defaultModel}".`}
-        </Text>
-      </View>
+
+      {provider.modelsUrl && !showCustomModel ? (
+        <>
+          {/* ── Picker mode ── */}
+          <Pressable
+            onPress={handleOpenPicker}
+            style={({ pressed }) => [
+              styles.card,
+              { backgroundColor: pressed ? colors.surfaceSelected : colors.surface, borderColor: colors.border },
+            ]}>
+            <Text
+              style={[Typography.body, { color: colors.text, fontFamily: 'monospace' }]}
+              numberOfLines={1}>
+              {currentModel}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs }}>
+              <Text style={[Typography.caption, { color: colors.textMuted, flex: 1 }]}>
+                Tap to choose a model
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+            </View>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          {/* ── Text input mode (fallback or "Custom model…") ── */}
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <TextInput
+              value={modelDraft}
+              onChangeText={setModelDraft}
+              onBlur={() => setModel(modelDraft)}
+              placeholder={provider.modelPlaceholder ?? provider.defaultModel}
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[Typography.body, { color: colors.text, fontFamily: 'monospace' }]}
+            />
+            <Text style={[Typography.caption, { color: colors.textMuted, marginTop: Spacing.sm }]}>
+              {provider.modelHint ?? `The ${provider.name} model id. Defaults to "${provider.defaultModel}".`}
+            </Text>
+          </View>
+        </>
+      )}
+
+      <ModelPicker
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        onSelect={handleSelectModel}
+        onCustomModel={handleCustomModel}
+        currentModel={currentModel}
+      />
 
       <SectionHeader>Appearance</SectionHeader>
       <ThemeSegmented />

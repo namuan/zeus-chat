@@ -4,6 +4,7 @@ export const OPENROUTER_PROVIDER: ProviderConfig = {
   id: 'openrouter',
   name: 'OpenRouter',
   apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
+  modelsUrl: 'https://openrouter.ai/api/v1/models',
   keysUrl: 'https://openrouter.ai/keys',
   defaultModel: 'openrouter/free',
   apiKeyPlaceholder: 'sk-or-v1-…',

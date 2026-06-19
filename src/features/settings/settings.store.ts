@@ -3,7 +3,10 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { getProvider, getDefaultProvider, PROVIDERS } from '@/lib/providers/registry';
+import { fetchAllModels } from '@/lib/providers/models';
+import { getApiKey } from '@/lib/securestore';
 import type { Mode } from '@/constants/theme';
+import type { ModelInfo } from '@/lib/providers/types';
 
 export type ThemePreference = 'system' | Mode;
 
@@ -17,11 +20,23 @@ interface SettingsState {
   /** Whether persisted state has been rehydrated yet. */
   hasHydrated: boolean;
 
+  /** Models fetched from the active provider (non-persisted). */
+  availableModels: ModelInfo[];
+  /** Whether a model fetch is in flight. */
+  modelsLoading: boolean;
+  /** Human-readable error from the last model fetch, or null. */
+  modelsError: string | null;
+
   setProvider: (id: string) => void;
   setModel: (model: string) => void;
   setThemePreference: (pref: ThemePreference) => void;
   setHydrated: (v: boolean) => void;
   reset: () => void;
+
+  /** Fetch available models from the currently selected provider. */
+  fetchAvailableModels: () => Promise<void>;
+  /** Clear fetched model list (e.g. on provider switch). */
+  clearAvailableModels: () => void;
 }
 
 /** Default models map so every known provider starts with its own default. */
@@ -41,6 +56,10 @@ export const useSettingsStore = create<SettingsState>()(
       themePreference: 'system',
       hasHydrated: false,
 
+      availableModels: [],
+      modelsLoading: false,
+      modelsError: null,
+
       setProvider: (provider) => set({ provider }),
 
       setModel: (model) => {
@@ -58,6 +77,30 @@ export const useSettingsStore = create<SettingsState>()(
           models: buildDefaultModels(),
           themePreference: 'system',
         }),
+
+      fetchAvailableModels: async () => {
+        const { provider } = get();
+        const cfg = getProvider(provider);
+        if (!cfg.modelsUrl) {
+          set({ modelsError: `${cfg.name} does not support listing models.`, availableModels: [], modelsLoading: false });
+          return;
+        }
+
+        set({ modelsLoading: true, modelsError: null });
+
+        try {
+          const apiKey = await getApiKey(provider);
+          const models = await fetchAllModels(cfg, apiKey);
+          set({ availableModels: models, modelsLoading: false, modelsError: null });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to load models.';
+          set({ modelsError: message, availableModels: [], modelsLoading: false });
+        }
+      },
+
+      clearAvailableModels: () => {
+        set({ availableModels: [], modelsError: null });
+      },
     }),
     {
       name: 'zeus-settings',

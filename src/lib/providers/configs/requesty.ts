@@ -4,6 +4,7 @@ export const REQUESTY_PROVIDER: ProviderConfig = {
   id: 'requesty',
   name: 'Requesty',
   apiUrl: 'https://router.requesty.ai/v1/chat/completions',
+  modelsUrl: 'https://router.requesty.ai/v1/models',
   keysUrl: 'https://app.requesty.ai/sign-up',
   defaultModel: 'google/gemma-4-31b-it',
   apiKeyPlaceholder: 'ry-…',
