@@ -7,28 +7,10 @@ import EventSource, {
   type TimeoutEvent,
 } from 'react-native-sse';
 
-import { OPENROUTER_URL, DEFAULT_MODEL } from '@/constants/theme';
-import type { ApiMessage, StreamError } from '@/features/chat/chat.types';
-import { getApiKey } from '@/lib/securestore';
+import type { ProviderConfig, StreamChatArgs, CompletionArgs, ValidateKeyResult } from '@/lib/providers/types';
+import type { StreamError } from '@/features/chat/chat.types';
 import { extractDelta, fetchStreamChat, mapApiError } from '@/lib/streaming';
 import { abortError } from '@/utils/abortController';
-
-/** OpenRouter requires the API key; optional attribution headers are nice. */
-function buildHeaders(apiKey: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://github.com/zeus-chat',
-    'X-Title': 'Zeus Chat',
-  };
-}
-
-export interface StreamChatArgs {
-  messages: ApiMessage[];
-  model?: string;
-  onToken: (token: string) => void;
-  signal: AbortSignal;
-}
 
 /**
  * Stream a chat completion token-by-token. Resolves with the full text.
@@ -39,19 +21,15 @@ export interface StreamChatArgs {
  */
 export function streamChat({
   messages,
-  model = DEFAULT_MODEL,
+  model,
   onToken,
   signal,
+  apiKey,
+  provider,
 }: StreamChatArgs): Promise<string> {
   return new Promise<string>(async (resolve, reject) => {
-    let apiKey: string;
-    try {
-      apiKey = (await getApiKey()) ?? '';
-    } catch {
-      apiKey = '';
-    }
     if (!apiKey) {
-      reject({ code: 'auth', message: 'No API key set. Add one in Settings.' } as StreamError);
+      reject({ code: 'auth', message: `No API key set for ${provider.name}. Add one in Settings.` } as StreamError);
       return;
     }
 
@@ -60,8 +38,9 @@ export function streamChat({
       return;
     }
 
-    const body = JSON.stringify({ model, messages, stream: true });
-    const headers = buildHeaders(apiKey);
+    const resolvedModel = model ?? provider.defaultModel;
+    const body = JSON.stringify({ model: resolvedModel, messages, stream: true });
+    const headers = provider.buildHeaders(apiKey);
 
     let full = '';
     let settled = false;
@@ -141,7 +120,7 @@ export function streamChat({
       const err: StreamError =
         status === 0
           ? { code: 'network', message: 'Network error. Check your connection.' }
-          : mapApiError(status, bodyText);
+          : mapApiError(status, bodyText, provider.name);
       finish(() => reject(err));
     };
 
@@ -161,7 +140,7 @@ export function streamChat({
     };
 
     try {
-      es = new EventSource(OPENROUTER_URL, options);
+      es = new EventSource(provider.apiUrl, options);
       es.addEventListener('message', onMessage);
       es.addEventListener('error', onError);
       es.addEventListener('close', onClose);
@@ -169,7 +148,14 @@ export function streamChat({
     } catch {
       // Fallback to fetch-based streaming if EventSource is unavailable.
       try {
-        full = await fetchStreamChat({ url: OPENROUTER_URL, headers, body, onToken, signal });
+        full = await fetchStreamChat({
+          url: provider.apiUrl,
+          headers,
+          body,
+          onToken,
+          signal,
+          providerName: provider.name,
+        });
         finish(() => resolve(full));
       } catch (err) {
         finish(() => reject(err as StreamError));
@@ -178,30 +164,25 @@ export function streamChat({
   });
 }
 
-export interface CompletionArgs {
-  messages: ApiMessage[];
-  model?: string;
-  signal?: AbortSignal;
-  maxTokens?: number;
-}
-
 /** Non-streaming completion. Used as a fallback / for validation. */
 export async function chatCompletion({
   messages,
-  model = DEFAULT_MODEL,
+  model,
   signal,
   maxTokens,
+  apiKey,
+  provider,
 }: CompletionArgs): Promise<string> {
-  const apiKey = (await getApiKey()) ?? '';
   if (!apiKey) {
-    throw { code: 'auth', message: 'No API key set.' } as StreamError;
+    throw { code: 'auth', message: `No API key set for ${provider.name}.` } as StreamError;
   }
 
-  const res = await fetch(OPENROUTER_URL, {
+  const resolvedModel = model ?? provider.defaultModel;
+  const res = await fetch(provider.apiUrl, {
     method: 'POST',
-    headers: buildHeaders(apiKey),
+    headers: provider.buildHeaders(apiKey),
     body: JSON.stringify({
-      model,
+      model: resolvedModel,
       messages,
       stream: false,
       ...(maxTokens ? { max_tokens: maxTokens } : {}),
@@ -211,7 +192,7 @@ export async function chatCompletion({
 
   const text = await res.text();
   if (!res.ok) {
-    throw mapApiError(res.status, text);
+    throw mapApiError(res.status, text, provider.name);
   }
   try {
     const json = JSON.parse(text);
@@ -228,13 +209,16 @@ export async function chatCompletion({
  * and an optional structured error.
  */
 export async function validateKey(
-  model: string = DEFAULT_MODEL,
-): Promise<{ ok: boolean; error?: StreamError }> {
+  apiKey: string,
+  provider: ProviderConfig,
+): Promise<ValidateKeyResult> {
   try {
     await chatCompletion({
       messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
-      model,
+      model: provider.defaultModel,
       maxTokens: 1,
+      apiKey,
+      provider,
     });
     return { ok: true };
   } catch (err) {

@@ -7,18 +7,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { deleteApiKey, saveApiKey } from '@/features/settings/settings.service';
-import { OPENROUTER_KEYS_URL, Radius, Spacing, Typography } from '@/constants/theme';
+import { getProvider } from '@/lib/providers/registry';
+import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
+import { useSettingsStore } from '@/features/settings/settings.store';
 
 /**
  * First-launch onboarding AND the "edit/remove key" screen.
  * `mode=edit` shows a back button and returns to the previous screen on save.
  * `clear=1` wipes the stored key on mount (used by the "Remove API key" flow).
+ * `provider` specifies which provider's key to manage (defaults to the one in
+ *  settings, or 'openrouter' on first launch).
  */
 export default function ApiKeyScreen() {
-  const params = useLocalSearchParams<{ mode?: string; clear?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; clear?: string; provider?: string }>();
   const isEdit = params.mode === 'edit';
   const shouldClear = params.clear === '1';
+  const providerId = params.provider ?? useSettingsStore.getState().provider ?? 'openrouter';
+  const provider = getProvider(providerId);
 
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -29,16 +35,16 @@ export default function ApiKeyScreen() {
 
   useEffect(() => {
     if (shouldClear) {
-      deleteApiKey().catch(() => {});
+      deleteApiKey(providerId).catch(() => {});
     }
-  }, [shouldClear]);
+  }, [shouldClear, providerId]);
 
   const save = async () => {
     const value = key.trim();
     if (!value) return;
     setSaving(true);
     try {
-      await saveApiKey(value);
+      await saveApiKey(value, providerId);
       if (isEdit) {
         router.back();
       } else {
@@ -50,6 +56,11 @@ export default function ApiKeyScreen() {
       setSaving(false);
     }
   };
+
+  const title = isEdit ? `${provider.name} API Key` : 'Welcome to Zeus Chat';
+  const subtitle = isEdit
+    ? `Update your ${provider.name} API key. It’s stored only in this device’s secure storage.`
+    : `A private, local-first AI chat. Paste your ${provider.name} API key to get started — no account, no backend.`;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -64,23 +75,21 @@ export default function ApiKeyScreen() {
         keyboardShouldPersistTaps="handled">
         <View style={{ flex: 1, justifyContent: 'center', minHeight: 320 }}>
           <Text style={[Typography.title, { color: colors.text }]}>
-            {isEdit ? 'API Key' : 'Welcome to Zeus Chat'}
+            {title}
           </Text>
           <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.md }]}>
-            {isEdit
-              ? 'Update your OpenRouter API key. It’s stored only in this device’s secure storage.'
-              : 'A private, local-first AI chat. Paste your OpenRouter API key to get started — no account, no backend.'}
+            {subtitle}
           </Text>
 
-          <Pressable onPress={() => openBrowserAsync(OPENROUTER_KEYS_URL)} style={styles.link}>
-            <Text style={[Typography.body, { color: colors.link }]}>Get an OpenRouter API key →</Text>
+          <Pressable onPress={() => openBrowserAsync(provider.keysUrl)} style={styles.link}>
+            <Text style={[Typography.body, { color: colors.link }]}>Get a {provider.name} API key →</Text>
           </Pressable>
 
           <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
             <TextInput
               value={key}
               onChangeText={setKey}
-              placeholder="sk-or-v1-…"
+              placeholder={provider.apiKeyPlaceholder}
               placeholderTextColor={colors.textMuted}
               secureTextEntry={!show}
               autoCapitalize="none"
@@ -101,7 +110,7 @@ export default function ApiKeyScreen() {
           </View>
 
           <Text style={[Typography.caption, { color: colors.textMuted, marginTop: Spacing.lg, textAlign: 'center' }]}>
-            Your key never leaves the device except to call OpenRouter directly.
+            Your key never leaves the device except to call {provider.name} directly.
           </Text>
         </View>
       </ScrollView>

@@ -147,9 +147,3 @@ export const Typography = {
 
 /** Max content width for tablet / large screens. */
 export const MaxContentWidth = 760;
-
-export const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-export const OPENROUTER_KEYS_URL = 'https://openrouter.ai/keys';
-
-/** Default model — the free OpenRouter auto‑router. Editable in Settings. */
-export const DEFAULT_MODEL = 'openrouter/free';

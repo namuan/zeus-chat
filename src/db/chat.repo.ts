@@ -4,20 +4,22 @@ import { now } from '@/utils/time';
 import type { Chat, ChatWithPreview } from '@/features/chat/chat.types';
 
 /** Insert a chat with a generated id (or a provided one). */
-export async function createChat(title = 'New Chat', id?: string): Promise<Chat> {
+export async function createChat(title = 'New Chat', provider = 'openrouter', id?: string): Promise<Chat> {
   const db = await getDb();
   const chat: Chat = {
     id: id ?? uuid(),
     title,
     created_at: now(),
     updated_at: now(),
+    provider,
   };
   await db.runAsync(
-    `INSERT INTO chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO chats (id, title, created_at, updated_at, provider) VALUES (?, ?, ?, ?, ?)`,
     chat.id,
     chat.title,
     chat.created_at,
     chat.updated_at,
+    chat.provider,
   );
   return chat;
 }
@@ -25,7 +27,7 @@ export async function createChat(title = 'New Chat', id?: string): Promise<Chat>
 export async function getChat(id: string): Promise<Chat | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<Chat>(
-    `SELECT id, title, created_at, updated_at FROM chats WHERE id = ?`,
+    `SELECT id, title, created_at, updated_at, provider FROM chats WHERE id = ?`,
     id,
   );
   return row ?? null;
@@ -40,6 +42,7 @@ export async function listChats(): Promise<ChatWithPreview[]> {
       c.title AS title,
       c.created_at AS created_at,
       c.updated_at AS updated_at,
+      c.provider AS provider,
       (
         SELECT content FROM messages m
         WHERE m.chat_id = c.id

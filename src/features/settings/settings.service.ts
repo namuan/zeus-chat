@@ -2,6 +2,7 @@ import { deleteAllChats } from '@/db/chat.repo';
 import { getDb } from '@/lib/sqlite';
 import {
   deleteApiKey,
+  deleteAllProviderKeys,
   getApiKey,
   getMaskedApiKey,
   hasApiKey,
@@ -11,14 +12,18 @@ import {
 /**
  * Settings-level operations that touch SecureStore / SQLite. Keeps screen
  * components free of storage details.
+ *
+ * All key operations accept an optional `providerId` (defaults to 'openrouter')
+ * for backward compatibility.
  */
 
 export {
+  deleteApiKey,
+  deleteAllProviderKeys,
   getApiKey,
   getMaskedApiKey,
   hasApiKey,
   saveApiKey,
-  deleteApiKey,
 };
 
 /** Wipe every local chat + message. The API key is left untouched. */
@@ -26,10 +31,10 @@ export async function deleteAllChatsData(): Promise<void> {
   await deleteAllChats();
 }
 
-/** Wipe chats, messages, AND the API key — full factory reset. */
+/** Wipe chats, messages, AND all provider API keys — full factory reset. */
 export async function deleteEverything(): Promise<void> {
   await deleteAllChats();
-  await deleteApiKey();
+  await deleteAllProviderKeys();
 }
 
 /** Compact JSON export of every chat + message, for backup/sharing. */
