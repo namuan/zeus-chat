@@ -23,12 +23,22 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
   const messages = useChatStore((s) => s.messages);
   const streamingText = useChatStore((s) => s.streamingText);
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const queuedMessages = useChatStore((s) => s.queuedMessages);
 
   const listRef = useRef<FlashListRef<DisplayMessage>>(null);
 
-  const data: DisplayMessage[] = isStreaming
+  // Synthetic messages for queued entries (shown below the conversation).
+  const queuedData: DisplayMessage[] = queuedMessages.map((text, i) => ({
+    id: `__queued__${i}`,
+    chat_id: '',
+    role: 'user' as const,
+    content: text,
+    created_at: Date.now() + i,
+    queued: true,
+  }));
+
+  const streamingData: DisplayMessage[] = isStreaming
     ? [
-        ...messages,
         {
           id: '__streaming__',
           chat_id: '',
@@ -38,7 +48,9 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
           streaming: true,
         },
       ]
-    : messages;
+    : [];
+
+  const data: DisplayMessage[] = [...messages, ...streamingData, ...queuedData];
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -57,7 +69,7 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
     if (isAtBottom.current) scrollToBottom();
   }, [streamingText, messages.length, scrollToBottom]);
 
-  if (messages.length === 0 && !isStreaming) {
+  if (messages.length === 0 && !isStreaming && queuedMessages.length === 0) {
     return <EmptyState />;
   }
 

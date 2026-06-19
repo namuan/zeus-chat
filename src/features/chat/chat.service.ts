@@ -1,25 +1,54 @@
-import { deleteChat as repoDeleteChat } from '@/db/chat.repo';
 import {
   createChat as repoCreateChat,
+  deleteChat as repoDeleteChat,
   getChat,
   listChats as repoListChats,
   renameChat as repoRenameChat,
   touchChat,
 } from '@/db/chat.repo';
 import {
+  deleteMessage as repoDeleteMessage,
   getLastAssistantMessage,
   getApiMessages,
   insertMessage,
   listMessages,
   updateMessageContent,
 } from '@/db/message.repo';
-import { deleteMessage as repoDeleteMessage } from '@/db/message.repo';
-import type { ApiMessage, Chat, Message, StreamError } from '@/features/chat/chat.types';
+import type {
+  ApiMessage,
+  Chat,
+  CompletionResult,
+  StreamError,
+} from '@/features/chat/chat.types';
 import { selectDisplayMessages, useChatStore } from '@/features/chat/chat.store';
 import { streamChat } from '@/lib/openrouter';
-import { isAbortError } from '@/utils/abortController';
+import { abort, createController, isAbortError } from '@/utils/abortController';
 import { now } from '@/utils/time';
 import { useSettingsStore } from '@/features/settings/settings.store';
+
+// ---------------------------------------------------------------------------
+// Module-level streaming controller — replaces useStreaming.
+// The service owns the AbortController so chained queue sends can be cancelled.
+// ---------------------------------------------------------------------------
+let _currentController: AbortController | null = null;
+
+function createSendSignal(): AbortSignal {
+  abort(_currentController);
+  _currentController = createController();
+  return _currentController.signal;
+}
+
+/** Cancel the current streaming request (if any). */
+export function cancelStream(): void {
+  abort(_currentController);
+  _currentController = null;
+}
+
+/** Cancel stream + clear the message queue. Called on unmount / chat switch. */
+export function cancelAndClear(): void {
+  cancelStream();
+  useChatStore.getState().clearQueue();
+}
 
 /** Derive a chat title from the first user message. */
 function titleFromText(text: string): string {
@@ -69,7 +98,7 @@ export async function deleteChat(chatId: string): Promise<void> {
  * Core streaming completion shared by send + regenerate. Persists the
  * assistant message once at the end (never per-token, per TECH.md).
  */
-async function runCompletion(chatId: string, signal: AbortSignal): Promise<string | null> {
+async function runCompletion(chatId: string, signal: AbortSignal): Promise<CompletionResult> {
   const store = useChatStore.getState();
   const model = useSettingsStore.getState().model;
 
@@ -80,11 +109,11 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<strin
   let apiMessages: ApiMessage[];
   try {
     apiMessages = await getApiMessages(chatId);
-  } catch (err) {
+  } catch {
     store.setStreaming(false);
     store.setStreamingText('');
     store.setError({ code: 'unknown', message: 'Could not read chat history.' });
-    throw err;
+    return 'error';
   }
 
   let full = '';
@@ -112,7 +141,7 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<strin
           /* ignore — can't persist the partial either */
         }
       }
-      return null;
+      return 'stopped';
     }
 
     const e = err as StreamError;
@@ -128,7 +157,7 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<strin
       }
     }
     store.setError(e);
-    return null;
+    return 'error';
   }
 
   // Success: persist the full assistant message.
@@ -143,13 +172,13 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<strin
   }
   store.setStreaming(false);
   store.setStreamingText('');
-  return content;
+  return 'success';
 }
 
 /** Send a user message and stream the assistant reply. */
-export async function sendMessage(chatId: string, text: string, signal: AbortSignal): Promise<void> {
+export async function sendMessage(chatId: string, text: string): Promise<CompletionResult> {
   const content = text.trim();
-  if (!content) return;
+  if (!content) return 'error';
 
   const ts = now();
   const userMsg = await insertMessage({ chat_id: chatId, role: 'user', content, created_at: ts });
@@ -162,16 +191,29 @@ export async function sendMessage(chatId: string, text: string, signal: AbortSig
     await renameChat(chatId, titleFromText(content));
   }
 
-  await runCompletion(chatId, signal);
+  const signal = createSendSignal();
+  const result = await runCompletion(chatId, signal);
+
+  // On success, auto-send the next queued message (FIFO chain).
+  if (result === 'success') {
+    const store = useChatStore.getState();
+    const next = store.dequeueMessage();
+    if (next) {
+      return await sendMessage(chatId, next);
+    }
+  }
+
+  return result;
 }
 
 /** Regenerate the last assistant reply (deletes it, then re-streams). */
-export async function regenerate(chatId: string, signal: AbortSignal): Promise<void> {
+export async function regenerate(chatId: string): Promise<CompletionResult> {
   const last = await getLastAssistantMessage(chatId);
-  if (!last) return;
+  if (!last) return 'error';
   await repoDeleteMessage(last.id);
   useChatStore.getState().removeMessage(last.id);
-  await runCompletion(chatId, signal);
+  const signal = createSendSignal();
+  return await runCompletion(chatId, signal);
 }
 
 /** Delete a single message (DB + store), then refresh list preview. */
@@ -186,12 +228,12 @@ export async function deleteMessage(messageId: string): Promise<void> {
 }
 
 /** Edit a user message in place, then regenerate the reply. */
-export async function editAndResend(chatId: string, messageId: string, newText: string, signal: AbortSignal): Promise<void> {
+export async function editAndResend(chatId: string, messageId: string, newText: string): Promise<CompletionResult> {
   const content = newText.trim();
-  if (!content) return;
+  if (!content) return 'error';
   const { messages } = useChatStore.getState();
   const idx = messages.findIndex((m) => m.id === messageId);
-  if (idx === -1) return;
+  if (idx === -1) return 'error';
   // Drop everything after the edited user message (the old assistant reply).
   const toRemove = messages.slice(idx + 1);
   for (const m of toRemove) {
@@ -202,7 +244,8 @@ export async function editAndResend(chatId: string, messageId: string, newText: 
   await updateMessageContent(messageId, content);
   useChatStore.getState().updateMessageContent(messageId, content);
   await touchChat(chatId);
-  await runCompletion(chatId, signal);
+  const signal = createSendSignal();
+  return await runCompletion(chatId, signal);
 }
 
 export { selectDisplayMessages };

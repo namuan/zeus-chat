@@ -15,6 +15,8 @@ export interface Message {
   role: Role;
   content: string;
   created_at: number;
+  /** True for messages queued for sending (not yet dispatched). */
+  queued?: boolean;
 }
 
 /** Chat row enriched with a last-message preview for list screens. */
@@ -29,6 +31,9 @@ export interface ApiMessage {
   role: Role;
   content: string;
 }
+
+/** Result of a streaming completion. */
+export type CompletionResult = 'success' | 'stopped' | 'error';
 
 /** Error surfaced to the UI from a streaming/completion failure. */
 export interface StreamError {

@@ -33,6 +33,14 @@ interface ChatState {
   appendStreamingToken: (t: string) => void;
   setStreaming: (v: boolean) => void;
   setError: (e: StreamError | null) => void;
+
+  // --- message queue ---
+  queuedMessages: string[];
+  enqueueMessage: (text: string) => void;
+  dequeueMessage: () => string | undefined;
+  peekQueue: () => string | undefined;
+  removeQueuedMessage: (index: number) => void;
+  clearQueue: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -69,6 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingText: '',
       isStreaming: false,
       error: null,
+      queuedMessages: [],
     }),
 
   addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
@@ -84,6 +93,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ streamingText: s.streamingText + t })),
   setStreaming: (v) => set({ isStreaming: v }),
   setError: (e) => set({ error: e }),
+
+  // --- message queue ---
+  queuedMessages: [],
+  enqueueMessage: (text) =>
+    set((s) => ({ queuedMessages: [...s.queuedMessages, text] })),
+  dequeueMessage: () => {
+    const { queuedMessages } = get();
+    if (queuedMessages.length === 0) return undefined;
+    const [first, ...rest] = queuedMessages;
+    set({ queuedMessages: rest });
+    return first;
+  },
+  peekQueue: () => {
+    const { queuedMessages } = get();
+    return queuedMessages.length > 0 ? queuedMessages[0] : undefined;
+  },
+  removeQueuedMessage: (index) =>
+    set((s) => ({
+      queuedMessages: s.queuedMessages.filter((_, i) => i !== index),
+    })),
+  clearQueue: () => set({ queuedMessages: [] }),
 }));
 
 /** Selector helper: the messages to render, with a trailing streaming bubble. */
