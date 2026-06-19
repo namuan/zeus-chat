@@ -3,13 +3,14 @@ import type { StreamError } from '@/features/chat/chat.types';
 /**
  * Low-level SSE helpers + a fetch-based streaming fallback.
  *
- * The primary transport is `react-native-sse` (see lib/openrouter.ts) because
- * React Native's built-in `fetch` does not expose a streaming `response.body`
- * in all versions. The fetch path here is kept as a graceful fallback.
+ * The primary transport is `react-native-sse` (see lib/providers/client.ts)
+ * because React Native's built-in `fetch` does not expose a streaming
+ * `response.body` in all versions. The fetch path here is kept as a graceful
+ * fallback.
  */
 
 /** Map an HTTP status / response body to a structured UI error. */
-export function mapApiError(status: number, body: string): StreamError {
+export function mapApiError(status: number, body: string, providerName?: string): StreamError {
   let apiMessage: string | undefined;
   try {
     const json = JSON.parse(body);
@@ -29,7 +30,7 @@ export function mapApiError(status: number, body: string): StreamError {
     return {
       code: 'credits',
       status,
-      message: apiMessage ?? 'Insufficient credits on this OpenRouter key.',
+      message: apiMessage ?? `Insufficient credits on this ${providerName ?? 'provider'} key.`,
     };
   }
   if (status === 429) {
@@ -43,7 +44,7 @@ export function mapApiError(status: number, body: string): StreamError {
     return {
       code: 'server',
       status,
-      message: apiMessage ?? `OpenRouter error (${status}). Try again.`,
+      message: apiMessage ?? `${providerName ?? 'Provider'} error (${status}). Try again.`,
     };
   }
   return {
@@ -98,12 +99,13 @@ export async function fetchStreamChat(args: {
   body: string;
   onToken: (token: string) => void;
   signal: AbortSignal;
+  providerName?: string;
 }): Promise<string> {
-  const { url, headers, body, onToken, signal } = args;
+  const { url, headers, body, onToken, signal, providerName } = args;
   const res = await fetch(url, { method: 'POST', headers, body, signal });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw mapApiError(res.status, text);
+    throw mapApiError(res.status, text, providerName);
   }
 
   // React Native's fetch does not always expose a streaming `body`; this

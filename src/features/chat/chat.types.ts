@@ -7,6 +7,7 @@ export interface Chat {
   title: string;
   created_at: number;
   updated_at: number;
+  provider?: string;
 }
 
 export interface Message {

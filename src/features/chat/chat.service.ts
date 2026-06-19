@@ -16,7 +16,9 @@ import {
 import { deleteMessage as repoDeleteMessage } from '@/db/message.repo';
 import type { ApiMessage, Chat, Message, StreamError } from '@/features/chat/chat.types';
 import { selectDisplayMessages, useChatStore } from '@/features/chat/chat.store';
-import { streamChat } from '@/lib/openrouter';
+import { streamChat } from '@/lib/providers/client';
+import { getProvider } from '@/lib/providers/registry';
+import { getApiKey } from '@/lib/securestore';
 import { isAbortError } from '@/utils/abortController';
 import { now } from '@/utils/time';
 import { useSettingsStore } from '@/features/settings/settings.store';
@@ -30,7 +32,8 @@ function titleFromText(text: string): string {
 
 /** Create a new chat and refresh the list. */
 export async function createChat(): Promise<Chat> {
-  const chat = await repoCreateChat('New Chat');
+  const provider = useSettingsStore.getState().provider;
+  const chat = await repoCreateChat('New Chat', provider);
   await useChatStore.getState().reloadChats();
   return chat;
 }
@@ -71,11 +74,25 @@ export async function deleteChat(chatId: string): Promise<void> {
  */
 async function runCompletion(chatId: string, signal: AbortSignal): Promise<string | null> {
   const store = useChatStore.getState();
-  const model = useSettingsStore.getState().model;
+  const { provider: providerId, models } = useSettingsStore.getState();
+  const provider = getProvider(providerId);
+  const model = models[providerId] ?? provider.defaultModel;
 
   store.setError(null);
   store.setStreaming(true);
   store.setStreamingText('');
+
+  let apiKey: string;
+  try {
+    apiKey = (await getApiKey(providerId)) ?? '';
+  } catch {
+    apiKey = '';
+  }
+  if (!apiKey) {
+    store.setError({ code: 'auth', message: `No API key set for ${provider.name}. Add one in Settings.` } as StreamError);
+    store.setStreaming(false);
+    return null;
+  }
 
   let apiMessages: ApiMessage[];
   try {
@@ -94,6 +111,8 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<strin
       model,
       onToken: (t) => useChatStore.getState().appendStreamingToken(t),
       signal,
+      apiKey,
+      provider,
     });
   } catch (err) {
     const partial = useChatStore.getState().streamingText;
