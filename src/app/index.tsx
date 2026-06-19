@@ -2,11 +2,11 @@ import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
-import { hasApiKey } from '@/lib/securestore';
+import { hasAnyApiKey } from '@/lib/securestore';
 import { useTheme } from '@/hooks/useTheme';
 
 /**
- * Entry route. Decides where to go based on whether an API key is stored.
+ * Entry route. Decides where to go based on whether any API key is stored.
  * The check is async (SecureStore), so we render a blank themed view until
  * the decision is made to avoid a flash of the wrong screen.
  */
@@ -17,7 +17,7 @@ export default function Index() {
 
   useEffect(() => {
     (async () => {
-      const ok = await hasApiKey();
+      const ok = await hasAnyApiKey();
       setHasKey(ok);
       setReady(true);
     })();

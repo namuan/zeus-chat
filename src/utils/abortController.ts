@@ -1,7 +1,7 @@
 /**
  * Small abort helpers. Streaming uses an AbortController so callers can
  * cancel an in-flight request from anywhere (navigation away, new message,
- * stop button). See lib/openrouter.ts for how the signal is wired to the
+ * stop button). See lib/providers/client.ts for how the signal is wired to the
  * underlying transport.
  */
 

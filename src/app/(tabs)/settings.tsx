@@ -4,14 +4,15 @@ import { openBrowserAsync } from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deleteAllChatsData, deleteEverything, exportAllDataJson, getMaskedApiKey, hasApiKey } from '@/features/settings/settings.service';
 import { useSettingsStore, type ThemePreference } from '@/features/settings/settings.store';
 import { refreshChats } from '@/features/chat/chat.service';
-import { OPENROUTER_KEYS_URL, Radius, Spacing, Typography } from '@/constants/theme';
+import { PROVIDER_LIST, getProvider } from '@/lib/providers/registry';
+import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { fileStamp } from '@/utils/time';
 
@@ -46,6 +47,29 @@ function Row({ icon, title, subtitle, onPress, destructive }: {
   );
 }
 
+function ProviderPicker() {
+  const { colors } = useTheme();
+  const provider = useSettingsStore((s) => s.provider);
+  const setProvider = useSettingsStore((s) => s.setProvider);
+  return (
+    <View style={[styles.segmented, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {PROVIDER_LIST.map((p) => {
+        const active = provider === p.id;
+        return (
+          <Pressable
+            key={p.id}
+            onPress={() => setProvider(p.id)}
+            style={[styles.segment, active && { backgroundColor: colors.accent }]}>
+            <Text style={[Typography.bodyMedium, { color: active ? colors.accentText : colors.textSecondary }]}>
+              {p.name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function ThemeSegmented() {
   const { colors } = useTheme();
   const preference = useSettingsStore((s) => s.themePreference);
@@ -75,23 +99,31 @@ function ThemeSegmented() {
 export default function SettingsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const model = useSettingsStore((s) => s.model);
+  const providerId = useSettingsStore((s) => s.provider);
+  const models = useSettingsStore((s) => s.models);
   const setModel = useSettingsStore((s) => s.setModel);
-  const [modelDraft, setModelDraft] = useState(model);
+  const provider = getProvider(providerId);
+  const currentModel = models[providerId] ?? provider.defaultModel;
+  const [modelDraft, setModelDraft] = useState(currentModel);
   const [maskedKey, setMaskedKey] = useState('');
   const [keyPresent, setKeyPresent] = useState(false);
+
+  // Sync modelDraft when the provider changes.
+  useEffect(() => {
+    setModelDraft(models[providerId] ?? provider.defaultModel);
+  }, [providerId, provider.defaultModel, models]);
 
   useFocusEffect(
     useCallback(() => {
       (async () => {
         try {
-          setMaskedKey(await getMaskedApiKey());
-          setKeyPresent(await hasApiKey());
+          setMaskedKey(await getMaskedApiKey(providerId));
+          setKeyPresent(await hasApiKey(providerId));
         } catch {
           /* SecureStore read failed — harmless, UI shows "No key set". */
         }
       })();
-    }, []),
+    }, [providerId]),
   );
 
   const exportData = async () => {
@@ -129,7 +161,7 @@ export default function SettingsScreen() {
   };
 
   const confirmReset = () => {
-    Alert.alert('Erase everything?', 'This deletes all chats AND your API key. You’ll need to re-enter a key.', [
+    Alert.alert('Erase everything?', 'This deletes all chats AND all API keys. You’ll need to re-enter your keys.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Erase',
@@ -148,9 +180,9 @@ export default function SettingsScreen() {
   };
 
   const removeKey = () => {
-    Alert.alert('Remove API key?', 'You’ll need to re-enter a key to chat again.', [
+    Alert.alert('Remove API key?', `You’ll need to re-enter a key for ${provider.name} to chat again.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => router.push('/onboarding/api-key?mode=edit&clear=1') },
+      { text: 'Remove', style: 'destructive', onPress: () => router.push(`/onboarding/api-key?mode=edit&clear=1&provider=${providerId}`) },
     ]);
   };
 
@@ -158,34 +190,37 @@ export default function SettingsScreen() {
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: Spacing.lg, paddingBottom: insets.bottom + Spacing.xxl, maxWidth: 680, width: '100%', alignSelf: 'center' }}>
-      <SectionHeader>API Key</SectionHeader>
+      <SectionHeader>Provider</SectionHeader>
+      <ProviderPicker />
+
+      <SectionHeader>API Key ({provider.name})</SectionHeader>
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[Typography.bodyMedium, { color: colors.text }]}>
-          {keyPresent ? 'Key is set' : 'No key set'}
+          {keyPresent ? `Key is set for ${provider.name}` : `No key set for ${provider.name}`}
         </Text>
         <Text style={[Typography.caption, { color: colors.textMuted, fontFamily: 'monospace', marginTop: 4 }]}>
           {maskedKey || '—'}
         </Text>
       </View>
       <View style={{ gap: Spacing.sm }}>
-        <Row icon="key-outline" title="Edit API key" subtitle="Stored only in device secure storage." onPress={() => router.push('/onboarding/api-key?mode=edit')} />
-        {keyPresent ? <Row icon="trash-outline" title="Remove API key" destructive onPress={removeKey} /> : null}
+        <Row icon="key-outline" title={`Edit ${provider.name} API key`} subtitle="Stored only in device secure storage." onPress={() => router.push(`/onboarding/api-key?mode=edit&provider=${providerId}`)} />
+        {keyPresent ? <Row icon="trash-outline" title={`Remove ${provider.name} key`} destructive onPress={removeKey} /> : null}
       </View>
 
-      <SectionHeader>Model</SectionHeader>
+      <SectionHeader>Model ({provider.name})</SectionHeader>
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <TextInput
           value={modelDraft}
           onChangeText={setModelDraft}
           onBlur={() => setModel(modelDraft)}
-          placeholder="free-router"
+          placeholder={provider.modelPlaceholder ?? provider.defaultModel}
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
           style={[Typography.body, { color: colors.text, fontFamily: 'monospace' }]}
         />
         <Text style={[Typography.caption, { color: colors.textMuted, marginTop: Spacing.sm }]}>
-          The OpenRouter model id. Defaults to “free-router”. You can use any OpenRouter model, e.g. “openrouter/auto” or a “:free” model.
+          {provider.modelHint ?? `The ${provider.name} model id. Defaults to "${provider.defaultModel}".`}
         </Text>
       </View>
 
@@ -196,7 +231,7 @@ export default function SettingsScreen() {
       <View style={{ gap: Spacing.sm }}>
         <Row icon="download-outline" title="Export all chats" subtitle="Save a JSON backup you can share." onPress={exportData} />
         <Row icon="trash-outline" title="Delete all chats" subtitle="Removes every conversation on this device." destructive onPress={confirmDeleteChats} />
-        <Row icon="alert-circle-outline" title="Erase everything" subtitle="Delete chats AND the API key." destructive onPress={confirmReset} />
+        <Row icon="alert-circle-outline" title="Erase everything" subtitle="Delete chats AND all API keys." destructive onPress={confirmReset} />
       </View>
 
       <SectionHeader>About</SectionHeader>
@@ -205,12 +240,12 @@ export default function SettingsScreen() {
         <Text style={[Typography.caption, { color: colors.textMuted, marginTop: 4 }]}>
           v{Constants.expoConfig?.version ?? '1.0.0'} · Local-first AI chat
         </Text>
-        <Pressable onPress={() => openBrowserAsync(OPENROUTER_KEYS_URL)} style={styles.linkRow}>
-          <Text style={[Typography.body, { color: colors.link }]}>Get an OpenRouter API key</Text>
+        <Pressable onPress={() => openBrowserAsync(provider.keysUrl)} style={styles.linkRow}>
+          <Text style={[Typography.body, { color: colors.link }]}>Get a {provider.name} API key</Text>
           <Ionicons name="open-outline" size={16} color={colors.link} />
         </Pressable>
         <Text style={[Typography.caption, { color: colors.textMuted, marginTop: Spacing.md }]}>
-          Everything stays on your device except the requests sent to OpenRouter. No accounts, no sync, no backend.
+          Everything stays on your device except the requests sent to the provider. No accounts, no sync, no backend.
         </Text>
       </View>
     </ScrollView>
