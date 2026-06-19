@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Keyboard, ScrollView, StyleSheet } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import type { FlashListRef } from '@shopify/flash-list';
+import { useCallback, useEffect, useRef } from 'react';
+import { Keyboard, StyleSheet } from 'react-native';
 
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -22,7 +24,7 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
   const streamingText = useChatStore((s) => s.streamingText);
   const isStreaming = useChatStore((s) => s.isStreaming);
 
-  const scrollRef = useRef<ScrollView>(null);
+  const listRef = useRef<FlashListRef<DisplayMessage>>(null);
 
   const data: DisplayMessage[] = isStreaming
     ? [
@@ -39,14 +41,11 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
     : messages;
 
   const scrollToBottom = useCallback(() => {
-    // Small delay so new content has been laid out before we ask the
-    // ScrollView for its final offset.
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollToEnd({ animated: false });
+      listRef.current?.scrollToEnd({ animated: false });
     });
   }, []);
 
-  // Only auto-scroll when the user is already near the bottom.
   const isAtBottom = useRef(true);
   const onScroll = useCallback((e: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
@@ -63,28 +62,37 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
   }
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      onScroll={onScroll}
-      scrollEventThrottle={32}
-      onScrollBeginDrag={() => Keyboard.dismiss()}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.content, { backgroundColor: colors.background }]}
-      style={{ backgroundColor: colors.background }}>
-      {data.map((msg, idx) => (
+    <FlashList
+      ref={listRef}
+      data={data}
+      keyExtractor={(item: DisplayMessage) => item.id}
+      renderItem={({ item, index }: { item: DisplayMessage; index: number }) => (
         <MessageBubble
-          key={msg.id}
-          message={msg}
-          isLast={idx === data.length - 1}
+          message={item}
+          isLast={index === data.length - 1}
           isStreaming={isStreaming}
           onRegenerate={onRegenerate}
           onEdit={onEdit}
           onDelete={onDelete}
           rawMode={rawMode}
         />
-      ))}
-    </ScrollView>
+      )}
+      onScroll={onScroll}
+      scrollEventThrottle={32}
+      onContentSizeChange={() => {
+        if (isAtBottom.current) scrollToBottom();
+      }}
+      onScrollBeginDrag={() => Keyboard.dismiss()}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      maintainVisibleContentPosition={{
+        autoscrollToBottomThreshold: 100,
+        animateAutoScrollToBottom: false,
+        startRenderingFromBottom: true,
+      }}
+      contentContainerStyle={[styles.content, { backgroundColor: colors.background }]}
+      style={{ backgroundColor: colors.background }}
+    />
   );
 }
 

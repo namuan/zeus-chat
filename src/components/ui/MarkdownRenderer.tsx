@@ -1,7 +1,19 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { setStringAsync } from 'expo-clipboard';
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import {
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+  type TextStyle,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Fonts, Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
@@ -106,22 +118,127 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           <Text style={{ fontSize: 11, color: copied ? colors.success : colors.textSecondary, marginLeft: 4 }}>
             {copied ? 'Copied' : 'Copy'}
           </Text>
-        </Pressable>
+          </Pressable>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled contentContainerStyle={{ flexGrow: 0 }}>
+          <Text
+            selectable
+            style={{
+              fontFamily: Fonts.mono,
+              fontSize: 13.5,
+              lineHeight: 20,
+              color: colors.codeText,
+              paddingVertical: Spacing.sm,
+            }}>
+            {code}
+          </Text>
+        </ScrollView>
       </View>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled contentContainerStyle={{ flexGrow: 0 }}>
-        <Text
-          selectable
-          style={{
-            fontFamily: Fonts.mono,
-            fontSize: 13.5,
-            lineHeight: 20,
-            color: colors.codeText,
-            paddingVertical: Spacing.sm,
-          }}>
-          {code}
-        </Text>
-      </ScrollView>
+  );
+}
+
+/* -------------------------------- table block ------------------------------ */
+
+const ROW_HEIGHT = 28;
+const COL_MIN_WIDTH = 90;
+const CHAR_WIDTH = 8;
+
+function TableBlock({
+  headers,
+  align,
+  rows,
+}: {
+  headers: string[];
+  align: ('left' | 'center' | 'right')[];
+  rows: string[][];
+}) {
+  const { colors } = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [expanded, setExpanded] = useState(false);
+
+  const { columnWidths, tableWidth } = useMemo(() => {
+    const widths = headers.map((h, ci) => {
+      const allInCol = [h, ...rows.map((r) => r[ci] ?? '')];
+      const maxLen = Math.max(...allInCol.map((s) => s.length));
+      return Math.max(maxLen * CHAR_WIDTH + 32, COL_MIN_WIDTH);
+    });
+    const total = widths.reduce((s, w) => s + w, 0) + widths.length * StyleSheet.hairlineWidth;
+    return { columnWidths: widths, tableWidth: total };
+  }, [headers, rows]);
+
+  const height = useMemo(() => {
+    const total = 1 + rows.length;
+    return total * ROW_HEIGHT + StyleSheet.hairlineWidth;
+  }, [rows]);
+
+  const availableWidth = screenWidth - Spacing.sm * 2 - Spacing.md * 2;
+  const needsScroll = tableWidth > availableWidth;
+
+  const tableContent = (
+    <View style={[styles.table, { width: needsScroll ? tableWidth : undefined, borderColor: colors.border }]}>
+      <View style={[styles.tableRow, { backgroundColor: colors.codeBackground }]}>
+        {headers.map((h, ci) => (
+          <View key={ci} style={[styles.tableCell, styles.tableCellHead, { width: columnWidths[ci], borderColor: colors.border }]}>
+            <Text style={[styles.tableCellText, { fontWeight: '700', color: colors.text }]}>{h}</Text>
+          </View>
+        ))}
+      </View>
+      {rows.map((row, ri) => (
+        <View key={ri} style={[styles.tableRow, ri % 2 === 1 ? { backgroundColor: colors.surface } : {}]}>
+          {row.map((cell, ci) => (
+            <View key={ci} style={[styles.tableCell, { width: columnWidths[ci], borderColor: colors.border }]}>
+              <Text
+                style={[
+                  styles.tableCellText,
+                  { color: colors.text },
+                  align[ci] === 'right' ? { textAlign: 'right' } : align[ci] === 'center' ? { textAlign: 'center' } : {},
+                ]}>
+                {cell}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ))}
     </View>
+  );
+
+  return (
+    <>
+      <TouchableOpacity
+        activeOpacity={needsScroll ? 0.7 : 1}
+        disabled={!needsScroll}
+        onPress={() => setExpanded(true)}
+        style={{ height }}>
+        <View style={{ height, overflow: 'hidden' }}>{tableContent}</View>
+        {needsScroll && (
+          <View style={[styles.tableOverflowHint, { backgroundColor: colors.surface }]}>
+            <Text style={{ color: colors.textSecondary, fontSize: 10 }}>{'← scroll →'}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <Modal
+        visible={expanded}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setExpanded(false)}>
+        <View style={[styles.tableModal, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+          <View style={[styles.tableModalHeader, { borderBottomColor: colors.border }]}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Table</Text>
+            <TouchableOpacity onPress={() => setExpanded(false)} hitSlop={12} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="close" size={20} color={colors.accent} />
+              <Text style={{ color: colors.accent, fontSize: 16 }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <Pressable style={{ flex: 1, paddingVertical: Spacing.md }} onPress={() => setExpanded(false)}>
+            <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ paddingHorizontal: Spacing.md }}>
+              <Pressable onPress={(e) => e.stopPropagation()}>{tableContent}</Pressable>
+            </ScrollView>
+          </Pressable>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -137,11 +254,40 @@ const HEADING_SIZES: Record<number, TextStyle> = {
 };
 
 interface Block {
-  type: 'code' | 'heading' | 'blockquote' | 'ul' | 'ol' | 'hr' | 'para' | 'spacer';
+  type: 'code' | 'heading' | 'blockquote' | 'ul' | 'ol' | 'hr' | 'para' | 'spacer' | 'table';
   level?: number;
   lang?: string;
   text?: string;
   items?: string[];
+  headers?: string[];
+  align?: ('left' | 'center' | 'right')[];
+  rows?: string[][];
+}
+
+/* ------------------------------- table helpers ------------------------------ */
+
+function splitTableRow(line: string): string[] {
+  const cells = line.split('|').map((c) => c.trim());
+  if (line.trimStart().startsWith('|')) cells.shift();
+  if (line.trimEnd().endsWith('|') && cells.length) cells.pop();
+  return cells;
+}
+
+function isSeparatorLine(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(line);
+}
+
+function isTableLine(line: string): boolean {
+  return line.includes('|');
+}
+
+function parseAlign(cell: string): 'left' | 'center' | 'right' {
+  const t = cell.trim();
+  const l = t.startsWith(':');
+  const r = t.endsWith(':');
+  if (l && r) return 'center';
+  if (r) return 'right';
+  return 'left';
 }
 
 function parseBlocks(source: string): Block[] {
@@ -222,6 +368,25 @@ function parseBlocks(source: string): Block[] {
       continue;
     }
 
+    // Table — line contains '|' and the very next line is a separator
+    if (
+      isTableLine(line) &&
+      i + 1 < lines.length &&
+      isSeparatorLine(lines[i + 1])
+    ) {
+      const headers = splitTableRow(line);
+      const alignCells = splitTableRow(lines[i + 1]);
+      const align = headers.map((_, ci) => parseAlign(alignCells[ci] || '---'));
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && isTableLine(lines[i])) {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      blocks.push({ type: 'table', headers, align, rows });
+      continue;
+    }
+
     // Paragraph: gather until a blank line or a block-starting line.
     const buf: string[] = [line];
     i++;
@@ -298,6 +463,15 @@ export function MarkdownRenderer({ content }: { content: string }) {
                 ))}
               </View>
             );
+          case 'table':
+            return (
+              <TableBlock
+                key={idx}
+                headers={block.headers ?? []}
+                align={block.align ?? []}
+                rows={block.rows ?? []}
+              />
+            );
           case 'hr':
             return <View key={idx} style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: Spacing.md }} />;
           case 'spacer':
@@ -334,4 +508,40 @@ const styles = StyleSheet.create({
   copyBtn: { flexDirection: 'row', alignItems: 'center' },
   list: { gap: Spacing.xs, marginVertical: Spacing.xs },
   listItem: { flexDirection: 'row', alignItems: 'flex-start' },
+  /* table */
+  table: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    marginVertical: Spacing.xs,
+  },
+  tableRow: { flexDirection: 'row' },
+  tableCell: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm - 2,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+  },
+  tableCellHead: { borderBottomWidth: 1 },
+  tableCellText: { fontSize: 13.5, lineHeight: 19 },
+  tableOverflowHint: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderTopRightRadius: Radius.md,
+    borderBottomRightRadius: Radius.md,
+  },
+  tableModal: { flex: 1 },
+  tableModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });

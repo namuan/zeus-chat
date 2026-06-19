@@ -2,7 +2,7 @@ import { impactAsync, ImpactFeedbackStyle } from 'expo-haptics';
 import { setStringAsync } from 'expo-clipboard';
 import * as Device from 'expo-device';
 import { memo, useEffect, useRef } from 'react';
-import { Alert, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
 import { LoadingDots } from '@/components/ui/LoadingDots';
@@ -74,7 +74,11 @@ function MessageBubbleImpl({
   };
 
   return (
-    <Pressable onLongPress={showMenu} style={[styles.row, isUser ? styles.rowUser : styles.rowAssistant]}>
+    <TouchableOpacity
+      onLongPress={showMenu}
+      activeOpacity={1}
+      delayLongPress={300}
+      style={[styles.row, isUser ? styles.rowUser : styles.rowAssistant]}>
       <View
         style={[
           styles.bubble,
@@ -110,7 +114,7 @@ function MessageBubbleImpl({
         )}
       </View>
       <Text style={[styles.time, { color: colors.textMuted }]}>{formatTime(message.created_at)}</Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
