@@ -63,6 +63,12 @@ const TEMPLATES: Template[] = [
     subtitle: 'Write a friendly message for a situation.',
     text: 'Draft a short, friendly message for the following situation:\n\n',
   },
+  {
+    icon: 'mail-outline',
+    title: 'Bullets to email',
+    subtitle: 'Convert bullet points into a polished email.',
+    text: 'Turn the following bullet points into a well-written, professional email:\n\n',
+  },
 ];
 
 export default function PromptsScreen() {
