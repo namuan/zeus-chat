@@ -40,7 +40,8 @@
             "image": "./assets/images/logo-glow.png"
           }
         }
-      ]
+      ],
+      "react-native-enriched-markdown"
     ],
     "experiments": {
       "typedRoutes": false
