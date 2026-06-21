@@ -9,7 +9,6 @@ import { LoadingDots } from '@/components/ui/LoadingDots';
 import { Fonts, Radius, Spacing, Typography } from '@/constants/theme';
 import type { Message } from '@/features/chat/chat.types';
 import { useTheme } from '@/hooks/useTheme';
-import { useParsedStream } from '@/lib/markdown/useParsedStream';
 import { formatTime } from '@/utils/time';
 
 type DisplayMessage = Message & { streaming?: boolean };
@@ -55,11 +54,6 @@ function MessageBubbleImpl({
   const isUser = message.role === 'user';
   const streaming = message.streaming === true;
   const empty = !message.content;
-
-  // Rules of Hooks: this call must happen before any conditional returns.
-  // The result is only used on the assistant path; for user / rawMode
-  // messages the hook's idle cost (one hash) is negligible.
-  const { blocks } = useParsedStream(message.content);
 
   const showMenu = () => {
     if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
@@ -121,7 +115,7 @@ function MessageBubbleImpl({
           </Fragment>
         ) : (
           <Fragment>
-            <MarkdownRenderer blocks={blocks} />
+            <MarkdownRenderer content={message.content} />
             {streaming && !empty && <Caret />}
           </Fragment>
         )}
