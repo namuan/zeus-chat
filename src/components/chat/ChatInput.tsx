@@ -72,9 +72,39 @@ export function ChatInput({
     onCancel();
   };
 
+  const inputHeight = Math.max(40, height);
+
   return (
-    <View style={[styles.bar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
-      <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View style={[styles.bar, { backgroundColor: colors.background, borderTopColor: colors.hairline }]}>
+      {/* ── Queue banner (only when messages are queued) ── */}
+      {queuedCount > 0 && (
+        <View style={[styles.queueBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+          <Text style={[styles.queueBannerText, { color: colors.textSecondary }]}>
+            {queuedCount} message{queuedCount > 1 ? 's' : ''} queued
+          </Text>
+          <Pressable
+            onPress={handleSend}
+            disabled={!canSend}
+            hitSlop={8}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <Text style={[styles.queueBannerAction, { color: canSend ? colors.accent : colors.textMuted }]}>
+              Send all
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* ── Unified input row ── */}
+      <View
+        style={[
+          styles.inputRow,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+          },
+        ]}>
+        {/* Text input — fills remaining space */}
         <TextInput
           ref={inputRef}
           value={text}
@@ -83,77 +113,92 @@ export function ChatInput({
           placeholderTextColor={colors.textMuted}
           multiline
           editable
-          onContentSizeChange={(e) => setHeight(Math.min(e.nativeEvent.contentSize.height, MAX_HEIGHT))}
+          onContentSizeChange={(e) =>
+            setHeight(Math.min(e.nativeEvent.contentSize.height, MAX_HEIGHT))
+          }
           style={[
             styles.input,
             {
               color: colors.text,
-              height: Math.max(40, height),
+              height: inputHeight,
             },
           ]}
         />
-      </View>
 
-      <View style={styles.actionsColumn}>
-        <ContextPieChart
-          used={contextUsed}
-          total={contextTotal}
-          onPress={onContextPress}
-        />
-
-        <View style={styles.actions}>
+        {/* Action buttons + context donut */}
+        <View style={styles.trailing}>
           {isStreaming ? (
             <>
-              {/* Queue button — replaces send as the primary action while streaming */}
+              {/* Queue button — becomes active when there's text to queue */}
               <Pressable
                 onPress={handleSend}
                 disabled={!canSend}
                 accessibilityLabel={queuedCount > 0 ? `${queuedCount} queued` : 'Queue message'}
                 accessibilityRole="button"
+                hitSlop={6}
                 style={({ pressed }) => [
+                  styles.actionBtn,
                   styles.queueBtn,
                   {
-                    backgroundColor: canSend ? colors.warning : colors.surface,
-                    opacity: canSend ? (pressed ? 0.8 : 1) : 1,
+                    backgroundColor: canSend ? colors.warning + '20' : 'transparent',
+                    opacity: canSend ? (pressed ? 0.7 : 1) : 0.4,
                   },
                 ]}>
                 <Ionicons
                   name="time-outline"
                   size={18}
-                  color={canSend ? colors.warningText : colors.textMuted}
+                  color={canSend ? colors.warning : colors.textMuted}
                 />
                 {queuedCount > 0 && (
-                  <View style={styles.queueBadge}>
+                  <View style={[styles.queueBadge, { backgroundColor: colors.danger }]}>
                     <Text style={styles.queueBadgeText}>{queuedCount}</Text>
                   </View>
                 )}
               </Pressable>
 
-              {/* Small stop button — secondary action */}
+              {/* Stop button */}
               <Pressable
                 onPress={handleStop}
                 accessibilityLabel="Stop generating"
                 accessibilityRole="button"
-                style={({ pressed }) => [styles.stopBtn, { opacity: pressed ? 0.6 : 1 }]}>
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  styles.stopBtn,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}>
                 <Ionicons name="stop" size={14} color={colors.danger} />
               </Pressable>
             </>
           ) : (
+            /* Send button */
             <Pressable
               onPress={handleSend}
               disabled={!canSend}
               accessibilityLabel="Send message"
               accessibilityRole="button"
+              hitSlop={6}
               style={({ pressed }) => [
+                styles.actionBtn,
                 styles.sendBtn,
                 {
                   backgroundColor: canSend ? colors.accent : colors.surface,
                   opacity: canSend ? (pressed ? 0.8 : 1) : 1,
                 },
               ]}>
-              <Ionicons name="arrow-up" size={20} color={canSend ? colors.accentText : colors.textMuted} />
+              <Ionicons
+                name="arrow-up"
+                size={20}
+                color={canSend ? colors.accentText : colors.textMuted}
+              />
             </Pressable>
           )}
+
+          <ContextPieChart
+            used={contextUsed}
+            total={contextTotal}
+            onPress={onContextPress}
+          />
         </View>
       </View>
     </View>
@@ -161,79 +206,99 @@ export function ChatInput({
 }
 
 const styles = StyleSheet.create({
+  // ── Outer bar ──
   bar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.xs,
     paddingBottom: Spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  inputWrap: {
-    flex: 1,
-    borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
+
+  // ── Queue banner ──
+  queueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+    marginHorizontal: Spacing.xs,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 8,
-    justifyContent: 'center',
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
   },
+  queueBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  queueBannerAction: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+
+  // ── Unified input row ──
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    borderRadius: Radius.lg + 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingLeft: Spacing.md,
+    paddingRight: Spacing.xs,
+    paddingVertical: 6,
+  },
+
+  // ── Text input ──
   input: {
+    flex: 1,
     fontSize: 16,
     lineHeight: 21,
     padding: 0,
     margin: 0,
     textAlignVertical: 'center',
   },
-  actions: {
+
+  // ── Trailing group (donut + buttons) ──
+  trailing: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
-    marginBottom: 2,
-  },
-  actionsColumn: {
-    flexDirection: 'column',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
+    marginBottom: 1,
+    marginLeft: Spacing.xs,
   },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+
+  // ── Action buttons ──
+  actionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sendBtn: {},
   queueBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
     position: 'relative',
   },
   queueBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
+    top: -3,
+    right: -3,
+    minWidth: 15,
+    height: 15,
     borderRadius: 8,
-    backgroundColor: '#D7393B',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
   queueBadgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
   stopBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(215, 57, 59, 0.1)',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(215, 57, 59, 0.12)',
   },
 });
