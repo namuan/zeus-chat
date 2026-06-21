@@ -30,8 +30,17 @@ export function useChat(chatId: string) {
   useEffect(() => {
     loadChat(chatId);
     return () => {
+      // Delete the chat if it has no messages — avoids orphaned empty chats
+      // when the user navigates back without sending anything.
+      const state = useChatStore.getState();
+      const isEmpty = state.messages.length === 0 && state.activeChatId === chatId;
+
       serviceCancelAndClear();
       useChatStore.getState().clearActive();
+
+      if (isEmpty) {
+        serviceDeleteChat(chatId).catch(console.error);
+      }
     };
   }, [chatId]);
 
