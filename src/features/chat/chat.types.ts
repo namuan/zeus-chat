@@ -8,6 +8,7 @@ export interface Chat {
   created_at: number;
   updated_at: number;
   provider?: string;
+  deleted_at?: number;
 }
 
 export interface Message {
@@ -18,6 +19,8 @@ export interface Message {
   created_at: number;
   /** True for messages queued for sending (not yet dispatched). */
   queued?: boolean;
+  /** The model that generated this response (assistant messages only). */
+  model?: string;
 }
 
 /** Chat row enriched with a last-message preview for list screens. */

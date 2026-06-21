@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useNavigation } from 'expo-router';
 import { useLayoutEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -44,17 +44,6 @@ export default function ChatsScreen() {
     router.push({ pathname: '/chat/[id]', params: { id } });
   };
 
-  const confirmDelete = (id: string, title: string) => {
-    Alert.alert(
-      'Delete chat?',
-      `“${title}” and its messages will be permanently removed from this device.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteChat(id).catch(console.error) },
-      ],
-    );
-  };
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.searchWrap, { borderBottomColor: colors.border }]}>
@@ -85,7 +74,7 @@ export default function ChatsScreen() {
               key={chat.id}
               renderRightActions={() => (
                 <Pressable
-                  onPress={() => confirmDelete(chat.id, chat.title)}
+                  onPress={() => deleteChat(chat.id).catch(console.error)}
                   style={[styles.deleteSwipe, { backgroundColor: colors.danger }]}>
                   <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
                   <Text style={[Typography.bodyMedium, { color: '#FFFFFF' }]}>Delete</Text>
@@ -94,7 +83,7 @@ export default function ChatsScreen() {
               overshootRight={false}>
               <Pressable
                 onPress={() => openChat(chat.id)}
-                onLongPress={() => confirmDelete(chat.id, chat.title)}
+                onLongPress={() => deleteChat(chat.id).catch(console.error)}
                 style={({ pressed }) => [
                   styles.row,
                   { backgroundColor: pressed ? colors.surfaceSelected : colors.background, borderBottomColor: colors.hairline },

@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SplashOverlay } from '@/components/SplashOverlay';
 import { useTheme } from '@/hooks/useTheme';
 import { initDb } from '@/lib/sqlite';
+import { purgeOldDeletedChats } from '@/features/chat/chat.service';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   /* already preventing */
@@ -24,12 +25,14 @@ export default function RootLayout() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  // Initialise the database
+  // Initialise the database and purge expired trash.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await initDb();
+        // Auto-clean soft-deleted chats older than 14 days.
+        purgeOldDeletedChats(14).catch((e) => console.warn('[purge] failed', e));
       } catch (e) {
         console.warn('[db] init failed', e);
       } finally {
@@ -73,6 +76,19 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen name="chat/new" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="settings/recently-deleted"
+                options={{
+                  headerShown: true,
+                  headerTitle: 'Recently Deleted',
+                  headerBackTitle: 'Settings',
+                  headerTintColor: colors.text,
+                  headerTitleStyle: { color: colors.text },
+                  headerStyle: { backgroundColor: colors.background },
+                  headerShadowVisible: false,
+                  contentStyle: { backgroundColor: colors.background },
+                }}
+              />
               <Stack.Screen name="onboarding/api-key" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" options={{ headerShown: false }} />
             </Stack>

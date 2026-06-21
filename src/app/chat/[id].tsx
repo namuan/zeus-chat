@@ -100,22 +100,13 @@ export default function ChatScreen() {
     }
   };
 
-  const confirmDelete = () => {
-    Alert.alert('Delete chat?', 'This conversation will be permanently removed.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteChat();
-            router.back();
-          } catch (e) {
-            console.error(e);
-          }
-        },
-      },
-    ]);
+  const handleDelete = async () => {
+    try {
+      await deleteChat();
+      router.back();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const copyAllAsMarkdown = async () => {
@@ -136,7 +127,7 @@ export default function ChatScreen() {
     { label: 'Copy all as Markdown', icon: 'copy-outline', onPress: () => copyAllAsMarkdown().catch(console.error) },
     { label: 'Export as Markdown', icon: 'document-text-outline', onPress: () => exportChat('md').catch(console.error) },
     { label: 'Export as JSON', icon: 'code-slash-outline', onPress: () => exportChat('json').catch(console.error) },
-    { label: 'Delete chat', icon: 'trash-outline', destructive: true, onPress: () => { setMenuVisible(false); confirmDelete(); } },
+    { label: 'Delete chat', icon: 'trash-outline', destructive: true, onPress: () => { setMenuVisible(false); handleDelete().catch(console.error); } },
   ];
 
   const onEditMessage = useCallback((m: Message) => {

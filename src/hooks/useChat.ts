@@ -8,6 +8,7 @@ import {
   deleteMessage as serviceDeleteMessage,
   editAndResend as serviceEditAndResend,
   loadChat,
+  permanentDeleteChat as servicePermanentDeleteChat,
   regenerate as serviceRegenerate,
   renameChat as serviceRenameChat,
   sendMessage as serviceSendMessage,
@@ -39,7 +40,7 @@ export function useChat(chatId: string) {
       useChatStore.getState().clearActive();
 
       if (isEmpty) {
-        serviceDeleteChat(chatId).catch(console.error);
+        servicePermanentDeleteChat(chatId).catch(console.error);
       }
     };
   }, [chatId]);

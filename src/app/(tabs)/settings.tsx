@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deleteAllChatsData, deleteEverything, exportAllDataJson, getMaskedApiKey, hasApiKey } from '@/features/settings/settings.service';
 import { useSettingsStore, type ThemePreference } from '@/features/settings/settings.store';
-import { refreshChats } from '@/features/chat/chat.service';
+import { countDeletedChats, refreshChats } from '@/features/chat/chat.service';
 import { PROVIDER_LIST, getProvider } from '@/lib/providers/registry';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
@@ -108,6 +108,7 @@ export default function SettingsScreen() {
   const [modelDraft, setModelDraft] = useState(currentModel);
   const [maskedKey, setMaskedKey] = useState('');
   const [keyPresent, setKeyPresent] = useState(false);
+  const [deletedCount, setDeletedCount] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
   const [showCustomModel, setShowCustomModel] = useState(false);
 
@@ -127,6 +128,7 @@ export default function SettingsScreen() {
         try {
           setMaskedKey(await getMaskedApiKey(providerId));
           setKeyPresent(await hasApiKey(providerId));
+          setDeletedCount(await countDeletedChats());
         } catch {
           /* SecureStore read failed — harmless, UI shows "No key set". */
         }
@@ -287,6 +289,12 @@ export default function SettingsScreen() {
       <SectionHeader>Data</SectionHeader>
       <View style={{ gap: Spacing.sm }}>
         <Row icon="download-outline" title="Export all chats" subtitle="Save a JSON backup you can share." onPress={exportData} />
+        <Row
+          icon="trash-outline"
+          title={`Recently Deleted${deletedCount > 0 ? ` (${deletedCount})` : ''}`}
+          subtitle={deletedCount > 0 ? 'Restore or permanently delete removed chats.' : 'No recently deleted chats.'}
+          onPress={() => router.push('/settings/recently-deleted')}
+        />
         <Row icon="trash-outline" title="Delete all chats" subtitle="Removes every conversation on this device." destructive onPress={confirmDeleteChats} />
         <Row icon="alert-circle-outline" title="Erase everything" subtitle="Delete chats AND all API keys." destructive onPress={confirmReset} />
       </View>

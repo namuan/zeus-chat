@@ -1,9 +1,14 @@
 import {
   createChat as repoCreateChat,
-  deleteChat as repoDeleteChat,
   getChat,
   listChats as repoListChats,
+  listDeletedChats as repoListDeletedChats,
   renameChat as repoRenameChat,
+  restoreChat as repoRestoreChat,
+  softDeleteChat as repoSoftDeleteChat,
+  permanentDeleteChat as repoPermanentDeleteChat,
+  purgeOldDeletedChats as repoPurgeOldDeletedChats,
+  countDeletedChats as repoCountDeletedChats,
   touchChat,
 } from '@/db/chat.repo';
 import {
@@ -89,12 +94,44 @@ export async function renameChat(chatId: string, title: string): Promise<void> {
   await reloadChats();
 }
 
-/** Delete a chat and clear the active session if it was open. */
+/** Soft-delete a chat. Does NOT clear the active session since it's reversible. */
 export async function deleteChat(chatId: string): Promise<void> {
-  await repoDeleteChat(chatId);
+  await repoSoftDeleteChat(chatId);
+  await useChatStore.getState().reloadChats();
+}
+
+/** Permanently delete a chat and clear the active session if it was open. */
+export async function permanentDeleteChat(chatId: string): Promise<void> {
+  await repoPermanentDeleteChat(chatId);
   const { activeChatId, clearActive, reloadChats } = useChatStore.getState();
   if (activeChatId === chatId) clearActive();
   await reloadChats();
+}
+
+/** Restore a soft-deleted chat back to the active list. */
+export async function restoreChat(chatId: string): Promise<void> {
+  await repoRestoreChat(chatId);
+  await useChatStore.getState().reloadChats();
+}
+
+/** List soft-deleted chats (for Recently Deleted screen). */
+export async function listDeletedChats(): Promise<Awaited<ReturnType<typeof repoListDeletedChats>>> {
+  return await repoListDeletedChats();
+}
+
+/** Count soft-deleted chats (for badge). */
+export async function countDeletedChats(): Promise<number> {
+  return await repoCountDeletedChats();
+}
+
+/** Permanently delete chats soft-deleted longer than `days` ago. */
+export async function purgeOldDeletedChats(days: number = 14): Promise<number> {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const purged = await repoPurgeOldDeletedChats(cutoff);
+  if (purged > 0) {
+    await useChatStore.getState().reloadChats();
+  }
+  return purged;
 }
 
 /**
@@ -152,7 +189,7 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
       // Save whatever was generated so the conversation isn't lost.
       if (partial.trim()) {
         try {
-          const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content: partial });
+          const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content: partial, model });
           useChatStore.getState().addMessage(msg);
           await touchChat(chatId);
           await useChatStore.getState().reloadChats();
@@ -167,7 +204,7 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
     if (partial.trim()) {
       e.partial = partial;
       try {
-        const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content: partial });
+        const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content: partial, model });
         useChatStore.getState().addMessage(msg);
         await touchChat(chatId);
         await useChatStore.getState().reloadChats();
@@ -182,7 +219,7 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
   // Success: persist the full assistant message.
   const content = full || useChatStore.getState().streamingText || '';
   try {
-    const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content });
+    const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content, model });
     useChatStore.getState().addMessage(msg);
     await touchChat(chatId);
     await useChatStore.getState().reloadChats();

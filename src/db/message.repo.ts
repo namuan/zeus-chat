@@ -13,14 +13,16 @@ export async function insertMessage(
     role: msg.role,
     content: msg.content,
     created_at: msg.created_at ?? now(),
+    model: msg.model,
   };
   await db.runAsync(
-    `INSERT INTO messages (id, chat_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO messages (id, chat_id, role, content, created_at, model) VALUES (?, ?, ?, ?, ?, ?)`,
     full.id,
     full.chat_id,
     full.role,
     full.content,
     full.created_at,
+    full.model ?? null,
   );
   return full;
 }
@@ -28,7 +30,7 @@ export async function insertMessage(
 export async function listMessages(chatId: string): Promise<Message[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<Message>(
-    `SELECT id, chat_id, role, content, created_at
+    `SELECT id, chat_id, role, content, created_at, model
      FROM messages
      WHERE chat_id = ?
      ORDER BY created_at ASC, rowid ASC`,
@@ -40,7 +42,7 @@ export async function listMessages(chatId: string): Promise<Message[]> {
 export async function getMessage(id: string): Promise<Message | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<Message>(
-    `SELECT id, chat_id, role, content, created_at FROM messages WHERE id = ?`,
+    `SELECT id, chat_id, role, content, created_at, model FROM messages WHERE id = ?`,
     id,
   );
   return row ?? null;
@@ -72,7 +74,7 @@ export async function getApiMessages(chatId: string): Promise<ApiMessage[]> {
 export async function getLastAssistantMessage(chatId: string): Promise<Message | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<Message>(
-    `SELECT id, chat_id, role, content, created_at
+    `SELECT id, chat_id, role, content, created_at, model
      FROM messages
      WHERE chat_id = ? AND role = 'assistant'
      ORDER BY created_at DESC, rowid DESC
@@ -85,7 +87,7 @@ export async function getLastAssistantMessage(chatId: string): Promise<Message |
 export async function getLastMessage(chatId: string): Promise<Message | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<Message>(
-    `SELECT id, chat_id, role, content, created_at
+    `SELECT id, chat_id, role, content, created_at, model
      FROM messages
      WHERE chat_id = ?
      ORDER BY created_at DESC, rowid DESC

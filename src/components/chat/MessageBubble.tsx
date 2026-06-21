@@ -18,6 +18,7 @@ interface MessageBubbleProps {
   isLast: boolean;
   isStreaming: boolean;
   rawMode?: boolean;
+  provider?: string;
   onRegenerate?: () => void;
   onEdit?: (message: Message) => void;
   onDelete?: (id: string) => void;
@@ -46,6 +47,7 @@ function MessageBubbleImpl({
   isLast,
   isStreaming,
   rawMode = false,
+  provider,
   onRegenerate,
   onEdit,
   onDelete,
@@ -54,6 +56,11 @@ function MessageBubbleImpl({
   const isUser = message.role === 'user';
   const streaming = message.streaming === true;
   const empty = !message.content;
+
+  // Subtle model+provider label for assistant messages.
+  const modelLabel = !isUser
+    ? [message.model, provider].filter(Boolean).join(' · ')
+    : null;
 
   const showMenu = () => {
     if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
@@ -120,7 +127,9 @@ function MessageBubbleImpl({
           </Fragment>
         )}
       </View>
-      <Text style={[styles.time, { color: colors.textMuted }]}>{formatTime(message.created_at)}</Text>
+      <Text style={[styles.time, { color: colors.textMuted }]}>
+        {modelLabel ? `${formatTime(message.created_at)} · ${modelLabel}` : formatTime(message.created_at)}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -129,9 +138,11 @@ export const MessageBubble = memo(MessageBubbleImpl, (prev, next) => {
   return (
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
+    prev.message.model === next.message.model &&
     prev.isLast === next.isLast &&
     prev.isStreaming === next.isStreaming &&
     prev.rawMode === next.rawMode &&
+    prev.provider === next.provider &&
     prev.onRegenerate === next.onRegenerate &&
     prev.onEdit === next.onEdit &&
     prev.onDelete === next.onDelete

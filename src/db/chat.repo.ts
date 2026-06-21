@@ -27,13 +27,13 @@ export async function createChat(title = 'New Chat', provider = 'openrouter', id
 export async function getChat(id: string): Promise<Chat | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<Chat>(
-    `SELECT id, title, created_at, updated_at, provider FROM chats WHERE id = ?`,
+    `SELECT id, title, created_at, updated_at, provider, deleted_at FROM chats WHERE id = ?`,
     id,
   );
   return row ?? null;
 }
 
-/** All chats newest-first, with a last-message preview. */
+/** Active (non-deleted) chats newest-first, with a last-message preview. */
 export async function listChats(): Promise<ChatWithPreview[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<ChatWithPreview>(`
@@ -43,6 +43,7 @@ export async function listChats(): Promise<ChatWithPreview[]> {
       c.created_at AS created_at,
       c.updated_at AS updated_at,
       c.provider AS provider,
+      c.deleted_at AS deleted_at,
       (
         SELECT content FROM messages m
         WHERE m.chat_id = c.id
@@ -59,7 +60,41 @@ export async function listChats(): Promise<ChatWithPreview[]> {
         SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id
       ) AS message_count
     FROM chats c
+    WHERE c.deleted_at IS NULL
     ORDER BY c.updated_at DESC, c.created_at DESC
+  `);
+  return rows ?? [];
+}
+
+/** Soft-deleted chats newest-first, with preview. */
+export async function listDeletedChats(): Promise<ChatWithPreview[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<ChatWithPreview>(`
+    SELECT
+      c.id AS id,
+      c.title AS title,
+      c.created_at AS created_at,
+      c.updated_at AS updated_at,
+      c.provider AS provider,
+      c.deleted_at AS deleted_at,
+      (
+        SELECT content FROM messages m
+        WHERE m.chat_id = c.id
+        ORDER BY m.created_at DESC, m.rowid DESC
+        LIMIT 1
+      ) AS last_message,
+      (
+        SELECT role FROM messages m
+        WHERE m.chat_id = c.id
+        ORDER BY m.created_at DESC, m.rowid DESC
+        LIMIT 1
+      ) AS last_role,
+      (
+        SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id
+      ) AS message_count
+    FROM chats c
+    WHERE c.deleted_at IS NOT NULL
+    ORDER BY c.deleted_at DESC, c.updated_at DESC
   `);
   return rows ?? [];
 }
@@ -76,7 +111,20 @@ export async function touchChat(id: string, ts: number = now()): Promise<void> {
   await db.runAsync(`UPDATE chats SET updated_at = ? WHERE id = ?`, ts, id);
 }
 
-export async function deleteChat(id: string): Promise<void> {
+/** Soft-delete: mark as deleted without removing data. */
+export async function softDeleteChat(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(`UPDATE chats SET deleted_at = ?, updated_at = ? WHERE id = ?`, now(), now(), id);
+}
+
+/** Restore a soft-deleted chat back to active. */
+export async function restoreChat(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(`UPDATE chats SET deleted_at = NULL, updated_at = ? WHERE id = ?`, now(), id);
+}
+
+/** Permanently delete a single chat and its messages. */
+export async function permanentDeleteChat(id: string): Promise<void> {
   const db = await getDb();
   // Manual cascade (PRAGMA foreign_keys is on, but be explicit for safety).
   await db.withTransactionAsync(async () => {
@@ -93,8 +141,40 @@ export async function deleteAllChats(): Promise<void> {
   });
 }
 
+/** Count active (non-deleted) chats. */
 export async function countChats(): Promise<number> {
   const db = await getDb();
-  const row = await db.getFirstAsync<{ c: number }>(`SELECT COUNT(*) AS c FROM chats`);
+  const row = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM chats WHERE deleted_at IS NULL`,
+  );
   return row?.c ?? 0;
+}
+
+/** Count soft-deleted chats. */
+export async function countDeletedChats(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM chats WHERE deleted_at IS NOT NULL`,
+  );
+  return row?.c ?? 0;
+}
+
+/** Permanently delete chats that were soft-deleted before the given timestamp. */
+export async function purgeOldDeletedChats(before: number): Promise<number> {
+  const db = await getDb();
+  let purged = 0;
+  await db.withTransactionAsync(async () => {
+    const toDelete = await db.getAllAsync<{ id: string }>(
+      `SELECT id FROM chats WHERE deleted_at IS NOT NULL AND deleted_at < ?`,
+      before,
+    );
+    purged = toDelete.length;
+    if (purged > 0) {
+      const ids = toDelete.map((r) => r.id);
+      const placeholders = ids.map(() => '?').join(',');
+      await db.runAsync(`DELETE FROM messages WHERE chat_id IN (${placeholders})`, ...ids);
+      await db.runAsync(`DELETE FROM chats WHERE id IN (${placeholders})`, ...ids);
+    }
+  });
+  return purged;
 }

@@ -24,6 +24,7 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
   const streamingText = useChatStore((s) => s.streamingText);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const queuedMessages = useChatStore((s) => s.queuedMessages);
+  const activeChat = useChatStore((s) => s.activeChat);
 
   const listRef = useRef<FlashListRef<DisplayMessage>>(null);
 
@@ -87,6 +88,7 @@ export function MessageList({ onRegenerate, onEdit, onDelete, rawMode = false }:
           onEdit={onEdit}
           onDelete={onDelete}
           rawMode={rawMode}
+          provider={activeChat?.provider}
         />
       )}
       onScroll={onScroll}
