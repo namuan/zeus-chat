@@ -34,6 +34,13 @@ interface ChatState {
   setStreaming: (v: boolean) => void;
   setError: (e: StreamError | null) => void;
 
+  // --- suggestions ---
+  suggestions: string[];
+  suggestionsLoading: boolean;
+  setSuggestions: (s: string[]) => void;
+  setSuggestionsLoading: (v: boolean) => void;
+  clearSuggestions: () => void;
+
   // --- message queue ---
   queuedMessages: string[];
   enqueueMessage: (text: string) => void;
@@ -77,6 +84,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingText: '',
       isStreaming: false,
       error: null,
+      suggestions: [],
+      suggestionsLoading: false,
       queuedMessages: [],
     }),
 
@@ -93,6 +102,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ streamingText: s.streamingText + t })),
   setStreaming: (v) => set({ isStreaming: v }),
   setError: (e) => set({ error: e }),
+
+  // --- suggestions ---
+  suggestions: [],
+  suggestionsLoading: false,
+  setSuggestions: (suggestions) => set({ suggestions, suggestionsLoading: false }),
+  setSuggestionsLoading: (suggestionsLoading) => set({ suggestionsLoading }),
+  clearSuggestions: () => set({ suggestions: [], suggestionsLoading: false }),
 
   // --- message queue ---
   queuedMessages: [],

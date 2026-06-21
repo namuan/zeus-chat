@@ -148,6 +148,15 @@ export default function ChatScreen() {
     regenerate().catch(console.error);
   }, [regenerate]);
 
+  const onSuggestionTap = useCallback(
+    (suggestion: string) => {
+      // Clear suggestions immediately for responsiveness, then auto-send.
+      useChatStore.getState().clearSuggestions();
+      send(suggestion);
+    },
+    [send],
+  );
+
   const dismissError = () => useChatStore.getState().setError(null);
 
   return (
@@ -156,7 +165,13 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.select({ ios: 60, default: 0 })}>
       <View style={{ flex: 1 }}>
-        <MessageList onRegenerate={onRegenerate} onEdit={onEditMessage} onDelete={onDeleteMessage} rawMode={rawMode} />
+        <MessageList
+          onRegenerate={onRegenerate}
+          onEdit={onEditMessage}
+          onDelete={onDeleteMessage}
+          onSuggestionTap={onSuggestionTap}
+          rawMode={rawMode}
+        />
       </View>
 
       {error ? (

@@ -26,7 +26,7 @@ import type {
   StreamError,
 } from '@/features/chat/chat.types';
 import { selectDisplayMessages, useChatStore } from '@/features/chat/chat.store';
-import { streamChat } from '@/lib/providers/client';
+import { chatCompletion, streamChat } from '@/lib/providers/client';
 import { getProvider } from '@/lib/providers/registry';
 import { getApiKey } from '@/lib/securestore';
 import { abort, createController, isAbortError } from '@/utils/abortController';
@@ -51,9 +51,30 @@ export function cancelStream(): void {
   _currentController = null;
 }
 
+// ---------------------------------------------------------------------------
+// Separate controller for suggestion generation — independently cancellable
+// from the main streaming controller when the user sends a new message.
+// ---------------------------------------------------------------------------
+let _suggestionController: AbortController | null = null;
+
+function cancelSuggestions(): void {
+  abort(_suggestionController);
+  _suggestionController = null;
+}
+
+function createSuggestionSignal(): AbortSignal {
+  cancelSuggestions();
+  _suggestionController = createController();
+  return _suggestionController.signal;
+}
+
+const SUGGESTION_SYSTEM_PROMPT = `Based on the most recent exchange in this conversation, suggest 3 concise follow-up prompts the user might want to ask next.
+Return ONLY a valid JSON array of 3 strings, each under 80 characters. No markdown, no code fences, no explanation, no numbering.`;
+
 /** Cancel stream + clear the message queue. Called on unmount / chat switch. */
 export function cancelAndClear(): void {
   cancelStream();
+  cancelSuggestions();
   useChatStore.getState().clearQueue();
 }
 
@@ -228,13 +249,87 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
   }
   store.setStreaming(false);
   store.setStreamingText('');
+
+  // Fire-and-forget suggestion generation (non-blocking).
+  generateSuggestions(chatId, createSuggestionSignal());
+
   return 'success';
+}
+
+/**
+ * Fire-and-forget: generate 3 follow-up suggestions after a successful
+ * completion. The call is non-blocking; failures are silently ignored.
+ */
+async function generateSuggestions(chatId: string, signal: AbortSignal): Promise<void> {
+  const store = useChatStore.getState();
+  const { provider: providerId, models } = useSettingsStore.getState();
+  const provider = getProvider(providerId);
+  const model = models[providerId] ?? provider.defaultModel;
+
+  store.setSuggestionsLoading(true);
+
+  let apiKey: string;
+  try {
+    apiKey = (await getApiKey(providerId)) ?? '';
+  } catch {
+    apiKey = '';
+  }
+  if (!apiKey) {
+    store.clearSuggestions();
+    return;
+  }
+
+  // Use the last 2 messages (last user + last assistant) for lightweight context.
+  const recentMessages = store.messages.slice(-2);
+  if (recentMessages.length === 0) {
+    store.clearSuggestions();
+    return;
+  }
+
+  const apiMessages: ApiMessage[] = [
+    { role: 'system', content: SUGGESTION_SYSTEM_PROMPT },
+    ...recentMessages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  try {
+    const text = await chatCompletion({
+      messages: apiMessages,
+      model,
+      signal,
+      maxTokens: 300,
+      apiKey,
+      provider,
+    });
+
+    // Parse JSON — try direct, then strip markdown fences.
+    const cleaned = text.replace(/^```(?:json)?\s*|```\s*$/gi, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const suggestions = parsed
+        .slice(0, 3)
+        .map((s: unknown) => String(s).trim())
+        .filter((s: string) => s.length > 0);
+      if (suggestions.length > 0) {
+        store.setSuggestions(suggestions);
+        return;
+      }
+    }
+  } catch {
+    // Silently fail — suggestions are purely additive.
+  }
+
+  store.clearSuggestions();
 }
 
 /** Send a user message and stream the assistant reply. */
 export async function sendMessage(chatId: string, text: string): Promise<CompletionResult> {
   const content = text.trim();
   if (!content) return 'error';
+
+  // Cancel any in-flight suggestion generation — user is sending something new.
+  cancelSuggestions();
+  useChatStore.getState().clearSuggestions();
 
   const ts = now();
   const userMsg = await insertMessage({ chat_id: chatId, role: 'user', content, created_at: ts });
@@ -264,6 +359,9 @@ export async function sendMessage(chatId: string, text: string): Promise<Complet
 
 /** Regenerate the last assistant reply (deletes it, then re-streams). */
 export async function regenerate(chatId: string): Promise<CompletionResult> {
+  cancelSuggestions();
+  useChatStore.getState().clearSuggestions();
+
   const last = await getLastAssistantMessage(chatId);
   if (!last) return 'error';
   await repoDeleteMessage(last.id);
@@ -285,6 +383,9 @@ export async function deleteMessage(messageId: string): Promise<void> {
 
 /** Edit a user message in place, then regenerate the reply. */
 export async function editAndResend(chatId: string, messageId: string, newText: string): Promise<CompletionResult> {
+  cancelSuggestions();
+  useChatStore.getState().clearSuggestions();
+
   const content = newText.trim();
   if (!content) return 'error';
   const { messages } = useChatStore.getState();
