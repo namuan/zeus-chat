@@ -1,7 +1,7 @@
 import { impactAsync, ImpactFeedbackStyle } from 'expo-haptics';
 import { setStringAsync } from 'expo-clipboard';
 import * as Device from 'expo-device';
-import { memo, useEffect, useRef } from 'react';
+import { Fragment, memo, useEffect, useRef } from 'react';
 import { Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer';
@@ -9,6 +9,7 @@ import { LoadingDots } from '@/components/ui/LoadingDots';
 import { Fonts, Radius, Spacing, Typography } from '@/constants/theme';
 import type { Message } from '@/features/chat/chat.types';
 import { useTheme } from '@/hooks/useTheme';
+import { useParsedStream } from '@/lib/markdown/useParsedStream';
 import { formatTime } from '@/utils/time';
 
 type DisplayMessage = Message & { streaming?: boolean };
@@ -55,6 +56,11 @@ function MessageBubbleImpl({
   const streaming = message.streaming === true;
   const empty = !message.content;
 
+  // Rules of Hooks: this call must happen before any conditional returns.
+  // The result is only used on the assistant path; for user / rawMode
+  // messages the hook's idle cost (one hash) is negligible.
+  const { blocks } = useParsedStream(message.content);
+
   const showMenu = () => {
     if (Device.isDevice) impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
     const buttons: { text: string; onPress?: () => void; style?: 'destructive' | 'cancel' }[] = [
@@ -89,7 +95,7 @@ function MessageBubbleImpl({
         {streaming && empty ? (
           <LoadingDots />
         ) : isUser ? (
-          <View>
+          <Fragment>
             <Text selectable style={{ color: colors.userBubbleText, ...Typography.body }}>
               {message.content}
             </Text>
@@ -98,9 +104,9 @@ function MessageBubbleImpl({
                 <Text style={styles.queuedTagText}>Queued</Text>
               </View>
             )}
-          </View>
+          </Fragment>
         ) : rawMode ? (
-          <View>
+          <Fragment>
             <Text
               selectable
               style={{
@@ -112,12 +118,12 @@ function MessageBubbleImpl({
               {message.content}
             </Text>
             {streaming && !empty && <Caret />}
-          </View>
+          </Fragment>
         ) : (
-          <View>
-            <MarkdownRenderer content={message.content} />
+          <Fragment>
+            <MarkdownRenderer blocks={blocks} />
             {streaming && !empty && <Caret />}
-          </View>
+          </Fragment>
         )}
       </View>
       <Text style={[styles.time, { color: colors.textMuted }]}>{formatTime(message.created_at)}</Text>

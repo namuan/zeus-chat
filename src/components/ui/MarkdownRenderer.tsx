@@ -17,11 +17,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Fonts, Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
+import type { Alignment, Block } from '@/lib/markdown/types';
 
 /**
- * Lightweight, dependency-free Markdown renderer tuned for AI responses.
- * Supports: fenced code blocks, inline code, headings, bold/italic, links,
- * blockquotes, ordered/unordered lists, tables, horizontal rules, and paragraphs.
+ * Pure renderer for a pre-parsed markdown `Block[]`. Stateless and
+ * side-effect free beyond what `CodeBlock` / `TableBlock` need for copy +
+ * expansion UI.
+ *
+ * Each block is keyed by its stable `id` from the parser, so React reuses
+ * component instances for blocks that survive across re-parses.
+ *
+ * Supported syntax: fenced code blocks, inline code, headings, bold/italic,
+ * links, blockquotes, ordered/unordered lists, tables, horizontal rules,
+ * paragraphs.
  */
 
 /* ---------------------------------- inline --------------------------------- */
@@ -29,7 +37,10 @@ import { useTheme } from '@/hooks/useTheme';
 const INLINE_RE =
   /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\))/;
 
-function renderInline(text: string, colors: ReturnType<typeof useTheme>['colors']): React.ReactNode[] {
+function renderInline(
+  text: string,
+  colors: ReturnType<typeof useTheme>['colors'],
+): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   let remaining = text;
   let key = 0;
@@ -118,22 +129,22 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           <Text style={{ fontSize: 11, color: copied ? colors.success : colors.textSecondary, marginLeft: 4 }}>
             {copied ? 'Copied' : 'Copy'}
           </Text>
-          </Pressable>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled contentContainerStyle={{ flexGrow: 0 }}>
-          <Text
-            selectable
-            style={{
-              fontFamily: Fonts.mono,
-              fontSize: 13.5,
-              lineHeight: 20,
-              color: colors.codeText,
-              paddingVertical: Spacing.sm,
-            }}>
-            {code}
-          </Text>
-        </ScrollView>
+        </Pressable>
       </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled contentContainerStyle={{ flexGrow: 0 }}>
+        <Text
+          selectable
+          style={{
+            fontFamily: Fonts.mono,
+            fontSize: 13.5,
+            lineHeight: 20,
+            color: colors.codeText,
+            paddingVertical: Spacing.sm,
+          }}>
+          {code}
+        </Text>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -149,7 +160,7 @@ function TableBlock({
   rows,
 }: {
   headers: string[];
-  align: ('left' | 'center' | 'right')[];
+  align: Alignment[];
   rows: string[][];
 }) {
   const { colors } = useTheme();
@@ -158,6 +169,9 @@ function TableBlock({
   const [expanded, setExpanded] = useState(false);
 
   const { columnWidths, tableWidth } = useMemo(() => {
+    // Width is computed from the *raw* cell text length so bold markers
+    // and backticks don't throw the column-width estimate off. The cells
+    // themselves are re-parsed at render time (see below).
     const widths = headers.map((h, ci) => {
       const allInCol = [h, ...rows.map((r) => r[ci] ?? '')];
       const maxLen = Math.max(...allInCol.map((s) => s.length));
@@ -180,24 +194,29 @@ function TableBlock({
       <View style={[styles.tableRow, { backgroundColor: colors.codeBackground }]}>
         {headers.map((h, ci) => (
           <View key={ci} style={[styles.tableCell, styles.tableCellHead, { width: columnWidths[ci], borderColor: colors.border }]}>
-            <Text style={[styles.tableCellText, { fontWeight: '700', color: colors.text }]}>{h}</Text>
+            <Text style={[styles.tableCellText, { fontWeight: '700', color: colors.text }]}>
+              {renderInline(h, colors)}
+            </Text>
           </View>
         ))}
       </View>
       {rows.map((row, ri) => (
         <View key={ri} style={[styles.tableRow, ri % 2 === 1 ? { backgroundColor: colors.surface } : {}]}>
-          {row.map((cell, ci) => (
-            <View key={ci} style={[styles.tableCell, { width: columnWidths[ci], borderColor: colors.border }]}>
-              <Text
-                style={[
-                  styles.tableCellText,
-                  { color: colors.text },
-                  align[ci] === 'right' ? { textAlign: 'right' } : align[ci] === 'center' ? { textAlign: 'center' } : {},
-                ]}>
-                {cell}
-              </Text>
-            </View>
-          ))}
+          {row.map((cell, ci) => {
+            const a = align[ci];
+            return (
+              <View key={ci} style={[styles.tableCell, { width: columnWidths[ci], borderColor: colors.border }]}>
+                <Text
+                  style={[
+                    styles.tableCellText,
+                    { color: colors.text },
+                    a === 'left' ? null : { textAlign: a },
+                  ]}>
+                  {cell ? renderInline(cell, colors) : ''}
+                </Text>
+              </View>
+            );
+          })}
         </View>
       ))}
     </View>
@@ -242,9 +261,9 @@ function TableBlock({
   );
 }
 
-/* ---------------------------------- blocks --------------------------------- */
+/* ---------------------------------- style ---------------------------------- */
 
-const HEADING_SIZES: Record<number, TextStyle> = {
+const HEADING_SIZES: Record<1 | 2 | 3 | 4 | 5 | 6, TextStyle> = {
   1: { fontSize: 24, fontWeight: '700', lineHeight: 30 },
   2: { fontSize: 20, fontWeight: '700', lineHeight: 26 },
   3: { fontSize: 17, fontWeight: '600', lineHeight: 23 },
@@ -253,240 +272,126 @@ const HEADING_SIZES: Record<number, TextStyle> = {
   6: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
 };
 
-interface Block {
-  type: 'code' | 'heading' | 'blockquote' | 'ul' | 'ol' | 'hr' | 'para' | 'spacer' | 'table';
-  level?: number;
-  lang?: string;
-  text?: string;
-  items?: string[];
-  headers?: string[];
-  align?: ('left' | 'center' | 'right')[];
-  rows?: string[][];
-}
-
-/* ------------------------------- table helpers ------------------------------ */
-
-function splitTableRow(line: string): string[] {
-  const cells = line.split('|').map((c) => c.trim());
-  if (line.trimStart().startsWith('|')) cells.shift();
-  if (line.trimEnd().endsWith('|') && cells.length) cells.pop();
-  return cells;
-}
-
-function isSeparatorLine(line: string): boolean {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(line);
-}
-
-function isTableLine(line: string): boolean {
-  return line.includes('|');
-}
-
-function parseAlign(cell: string): 'left' | 'center' | 'right' {
-  const t = cell.trim();
-  const l = t.startsWith(':');
-  const r = t.endsWith(':');
-  if (l && r) return 'center';
-  if (r) return 'right';
-  return 'left';
-}
-
-function parseBlocks(source: string): Block[] {
-  const lines = source.replace(/\r\n/g, '\n').split('\n');
-  const blocks: Block[] = [];
-
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Fenced code block
-    const fence = line.match(/^```(\s*\w+)?\s*$/);
-    if (fence) {
-      const lang = fence[1]?.trim();
-      const buf: string[] = [];
-      i++;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-        buf.push(lines[i]);
-        i++;
-      }
-      i++; // consume closing ```
-      blocks.push({ type: 'code', lang, text: buf.join('\n') });
-      continue;
-    }
-
-    // Blank line -> spacer (collapsed)
-    if (line.trim() === '') {
-      blocks.push({ type: 'spacer' });
-      i++;
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
-      blocks.push({ type: 'hr' });
-      i++;
-      continue;
-    }
-
-    // Heading
-    const h = line.match(/^(#{1,6})\s+(.*)$/);
-    if (h) {
-      blocks.push({ type: 'heading', level: h[1].length, text: h[2].trim() });
-      i++;
-      continue;
-    }
-
-    // Blockquote
-    if (/^\s*>\s?/.test(line)) {
-      const buf: string[] = [];
-      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
-        buf.push(lines[i].replace(/^\s*>\s?/, ''));
-        i++;
-      }
-      blocks.push({ type: 'blockquote', text: buf.join('\n') });
-      continue;
-    }
-
-    // Unordered list
-    if (/^\s*[-*+]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*+]\s+/, ''));
-        i++;
-      }
-      blocks.push({ type: 'ul', items });
-      continue;
-    }
-
-    // Ordered list
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
-        i++;
-      }
-      blocks.push({ type: 'ol', items });
-      continue;
-    }
-
-    // Table — line contains '|' and the very next line is a separator
-    if (
-      isTableLine(line) &&
-      i + 1 < lines.length &&
-      isSeparatorLine(lines[i + 1])
-    ) {
-      const headers = splitTableRow(line);
-      const alignCells = splitTableRow(lines[i + 1]);
-      const align = headers.map((_, ci) => parseAlign(alignCells[ci] || '---'));
-      i += 2;
-      const rows: string[][] = [];
-      while (i < lines.length && isTableLine(lines[i])) {
-        rows.push(splitTableRow(lines[i]));
-        i++;
-      }
-      blocks.push({ type: 'table', headers, align, rows });
-      continue;
-    }
-
-    // Paragraph: gather until a blank line or a block-starting line.
-    const buf: string[] = [line];
-    i++;
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !/^```/.test(lines[i]) &&
-      !/^#{1,6}\s+/.test(lines[i]) &&
-      !/^\s*>\s?/.test(lines[i]) &&
-      !/^\s*[-*+]\s+/.test(lines[i]) &&
-      !/^\s*\d+\.\s+/.test(lines[i]) &&
-      !/^\s*([-*_])\1{2,}\s*$/.test(lines[i])
-    ) {
-      buf.push(lines[i]);
-      i++;
-    }
-    blocks.push({ type: 'para', text: buf.join('\n') });
-  }
-
-  return blocks;
-}
-
 /* --------------------------------- renderer -------------------------------- */
 
-export function MarkdownRenderer({ content }: { content: string }) {
+export interface MarkdownRendererProps {
+  /** Pre-parsed blocks. Usually obtained from `useParsedStream`. */
+  blocks: Block[];
+}
+
+/**
+ * Renders a pre-parsed list of markdown blocks. Stateless and side-effect
+ * free beyond what `CodeBlock` / `TableBlock` need for copy + expansion UI.
+ */
+/** A single bullet/numbered row used by both UL and OL rendering. */
+function ListItem({
+  bullet,
+  text,
+  colors,
+}: {
+  bullet: string;
+  text: string;
+  colors: ReturnType<typeof useTheme>['colors'];
+}) {
+  return (
+    <View style={styles.listItem}>
+      <Text style={{ color: colors.textSecondary, marginRight: Spacing.sm }}>{bullet}</Text>
+      <Text style={[Typography.body, { color: colors.text, flexShrink: 1 }]}>
+        {renderInline(text, colors)}
+      </Text>
+    </View>
+  );
+}
+
+export function MarkdownRenderer({ blocks }: MarkdownRendererProps) {
   const { colors } = useTheme();
-  const blocks = useMemo(() => parseBlocks(content), [content]);
 
   return (
     <View style={styles.container}>
-      {blocks.map((block, idx) => {
-        switch (block.type) {
-          case 'code':
-            return <CodeBlock key={idx} code={block.text ?? ''} lang={block.lang} />;
-          case 'heading':
-            return (
-              <Text key={idx} style={[HEADING_SIZES[block.level ?? 3], { color: colors.text, marginTop: idx ? Spacing.md : 0 }]}>
-                {renderInline(block.text ?? '', colors)}
-              </Text>
-            );
-          case 'blockquote':
-            return (
-              <View
-                key={idx}
-                style={{ borderLeftWidth: 3, borderLeftColor: colors.border, paddingLeft: Spacing.md, marginVertical: Spacing.xs }}>
-                <Text style={{ color: colors.textSecondary, fontStyle: 'italic', lineHeight: 21 }}>
-                  {renderInline(block.text ?? '', colors)}
-                </Text>
-              </View>
-            );
-          case 'ul':
-            return (
-              <View key={idx} style={styles.list}>
-                {block.items?.map((item, j) => (
-                  <View key={j} style={styles.listItem}>
-                    <Text style={{ color: colors.textSecondary, marginRight: Spacing.sm }}>{'•'}</Text>
-                    <Text style={[Typography.body, { color: colors.text, flexShrink: 1 }]}>
-                      {renderInline(item, colors)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            );
-          case 'ol':
-            return (
-              <View key={idx} style={styles.list}>
-                {block.items?.map((item, j) => (
-                  <View key={j} style={styles.listItem}>
-                    <Text style={{ color: colors.textSecondary, marginRight: Spacing.sm }}>{`${j + 1}.`}</Text>
-                    <Text style={[Typography.body, { color: colors.text, flexShrink: 1 }]}>
-                      {renderInline(item, colors)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            );
-          case 'table':
-            return (
-              <TableBlock
-                key={idx}
-                headers={block.headers ?? []}
-                align={block.align ?? []}
-                rows={block.rows ?? []}
-              />
-            );
-          case 'hr':
-            return <View key={idx} style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: Spacing.md }} />;
-          case 'spacer':
-            return <View key={idx} style={{ height: Spacing.sm }} />;
-          case 'para':
-          default:
-            return (
-              <Text key={idx} style={[Typography.body, { color: colors.text }]}>
-                {renderInline(block.text ?? '', colors)}
-              </Text>
-            );
-        }
-      })}
+      {blocks.map((block) => renderBlock(block, colors))}
     </View>
   );
+}
+
+function renderBlock(
+  block: Block,
+  colors: ReturnType<typeof useTheme>['colors'],
+): React.ReactNode {
+  switch (block.type) {
+    case 'code':
+      return <CodeBlock key={block.id} code={block.text} lang={block.lang} />;
+    case 'heading':
+      return (
+        <Text
+          key={block.id}
+          style={[
+            HEADING_SIZES[block.level],
+            { color: colors.text, marginTop: Spacing.md },
+          ]}>
+          {renderInline(block.text, colors)}
+        </Text>
+      );
+    case 'blockquote':
+      return (
+        <View
+          key={block.id}
+          style={{
+            borderLeftWidth: 3,
+            borderLeftColor: colors.border,
+            paddingLeft: Spacing.md,
+            marginVertical: Spacing.xs,
+          }}>
+          <Text style={{ color: colors.textSecondary, fontStyle: 'italic', lineHeight: 21 }}>
+            {renderInline(block.text, colors)}
+          </Text>
+        </View>
+      );
+    case 'ul':
+      return (
+        <View key={block.id} style={styles.list}>
+          {block.items.map((item, j) => (
+            <ListItem key={j} bullet="•" text={item} colors={colors} />
+          ))}
+        </View>
+      );
+    case 'ol':
+      return (
+        <View key={block.id} style={styles.list}>
+          {block.items.map((item, j) => (
+            <ListItem key={j} bullet={`${j + 1}.`} text={item} colors={colors} />
+          ))}
+        </View>
+      );
+    case 'table':
+      return (
+        <TableBlock
+          key={block.id}
+          headers={block.headers}
+          align={block.align}
+          rows={block.rows}
+        />
+      );
+    case 'hr':
+      return (
+        <View
+          key={block.id}
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: colors.border,
+            marginVertical: Spacing.md,
+          }}
+        />
+      );
+    case 'spacer':
+      return <View key={block.id} style={{ height: Spacing.sm }} />;
+    case 'para':
+    default:
+      return (
+        <Text key={block.id} style={[Typography.body, { color: colors.text }]}>
+          {renderInline(block.text, colors)}
+        </Text>
+      );
+  }
 }
 
 const styles = StyleSheet.create({
