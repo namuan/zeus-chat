@@ -19,7 +19,7 @@ export async function createChat(title = 'New Chat', provider = 'openrouter', id
     chat.title,
     chat.created_at,
     chat.updated_at,
-    chat.provider,
+    chat.provider ?? null,
   );
   return chat;
 }

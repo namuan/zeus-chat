@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
+import { ContextPieChart } from '@/components/ui/ContextPieChart';
 
 interface ChatInputProps {
   onSend: (text: string) => void | Promise<void>;
@@ -15,6 +16,12 @@ interface ChatInputProps {
   queuedCount: number;
   initialText?: string;
   placeholder?: string;
+  /** Token usage so far (for the pie-chart indicator). */
+  contextUsed?: number;
+  /** Model's maximum context window (for the pie-chart indicator). */
+  contextTotal?: number;
+  /** Called when the user taps the pie chart. */
+  onContextPress?: () => void;
 }
 
 const MAX_HEIGHT = 140;
@@ -27,6 +34,9 @@ export function ChatInput({
   queuedCount,
   initialText,
   placeholder = 'Message…',
+  contextUsed = 0,
+  contextTotal = 0,
+  onContextPress,
 }: ChatInputProps) {
   const { colors } = useTheme();
   const [text, setText] = useState(initialText ?? '');
@@ -84,59 +94,67 @@ export function ChatInput({
         />
       </View>
 
-      <View style={styles.actions}>
-        {isStreaming ? (
-          <>
-            {/* Queue button — replaces send as the primary action while streaming */}
+      <View style={styles.actionsColumn}>
+        <ContextPieChart
+          used={contextUsed}
+          total={contextTotal}
+          onPress={onContextPress}
+        />
+
+        <View style={styles.actions}>
+          {isStreaming ? (
+            <>
+              {/* Queue button — replaces send as the primary action while streaming */}
+              <Pressable
+                onPress={handleSend}
+                disabled={!canSend}
+                accessibilityLabel={queuedCount > 0 ? `${queuedCount} queued` : 'Queue message'}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.queueBtn,
+                  {
+                    backgroundColor: canSend ? colors.warning : colors.surface,
+                    opacity: canSend ? (pressed ? 0.8 : 1) : 1,
+                  },
+                ]}>
+                <Ionicons
+                  name="time-outline"
+                  size={18}
+                  color={canSend ? colors.warningText : colors.textMuted}
+                />
+                {queuedCount > 0 && (
+                  <View style={styles.queueBadge}>
+                    <Text style={styles.queueBadgeText}>{queuedCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              {/* Small stop button — secondary action */}
+              <Pressable
+                onPress={handleStop}
+                accessibilityLabel="Stop generating"
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.stopBtn, { opacity: pressed ? 0.6 : 1 }]}>
+                <Ionicons name="stop" size={14} color={colors.danger} />
+              </Pressable>
+            </>
+          ) : (
             <Pressable
               onPress={handleSend}
               disabled={!canSend}
-              accessibilityLabel={queuedCount > 0 ? `${queuedCount} queued` : 'Queue message'}
+              accessibilityLabel="Send message"
               accessibilityRole="button"
               style={({ pressed }) => [
-                styles.queueBtn,
+                styles.sendBtn,
                 {
-                  backgroundColor: canSend ? colors.warning : colors.surface,
+                  backgroundColor: canSend ? colors.accent : colors.surface,
                   opacity: canSend ? (pressed ? 0.8 : 1) : 1,
                 },
               ]}>
-              <Ionicons
-                name="time-outline"
-                size={18}
-                color={canSend ? colors.warningText : colors.textMuted}
-              />
-              {queuedCount > 0 && (
-                <View style={styles.queueBadge}>
-                  <Text style={styles.queueBadgeText}>{queuedCount}</Text>
-                </View>
-              )}
+              <Ionicons name="arrow-up" size={20} color={canSend ? colors.accentText : colors.textMuted} />
             </Pressable>
-
-            {/* Small stop button — secondary action */}
-            <Pressable
-              onPress={handleStop}
-              accessibilityLabel="Stop generating"
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.stopBtn, { opacity: pressed ? 0.6 : 1 }]}>
-              <Ionicons name="stop" size={14} color={colors.danger} />
-            </Pressable>
-          </>
-        ) : (
-          <Pressable
-            onPress={handleSend}
-            disabled={!canSend}
-            accessibilityLabel="Send message"
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.sendBtn,
-              {
-                backgroundColor: canSend ? colors.accent : colors.surface,
-                opacity: canSend ? (pressed ? 0.8 : 1) : 1,
-              },
-            ]}>
-            <Ionicons name="arrow-up" size={20} color={canSend ? colors.accentText : colors.textMuted} />
-          </Pressable>
-        )}
+          )}
+        </View>
       </View>
     </View>
   );
@@ -172,6 +190,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 6,
     marginBottom: 2,
+  },
+  actionsColumn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
   },
   sendBtn: {
     width: 40,

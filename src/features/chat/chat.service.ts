@@ -27,6 +27,8 @@ import type {
 } from '@/features/chat/chat.types';
 import { selectDisplayMessages, useChatStore } from '@/features/chat/chat.store';
 import { chatCompletion, streamChat } from '@/lib/providers/client';
+import type { TokenUsage } from '@/lib/streaming';
+import { estimateMessagesTokens, estimateTokens } from '@/lib/tokenizer';
 import { getProvider } from '@/lib/providers/registry';
 import { getApiKey } from '@/lib/securestore';
 import { abort, createController, isAbortError } from '@/utils/abortController';
@@ -192,8 +194,9 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
   }
 
   let full = '';
+  let usage: TokenUsage | undefined;
   try {
-    full = await streamChat({
+    const result = await streamChat({
       messages: apiMessages,
       model,
       onToken: (t) => useChatStore.getState().appendStreamingToken(t),
@@ -201,6 +204,8 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
       apiKey,
       provider,
     });
+    full = result.text;
+    usage = result.usage;
   } catch (err) {
     const partial = useChatStore.getState().streamingText;
     store.setStreaming(false);
@@ -239,8 +244,28 @@ async function runCompletion(chatId: string, signal: AbortSignal): Promise<Compl
 
   // Success: persist the full assistant message.
   const content = full || useChatStore.getState().streamingText || '';
+
+  // If the provider didn't return usage, estimate from the messages sent.
+  if (!usage) {
+    const promptTokens = estimateMessagesTokens(apiMessages);
+    const completionTokens = estimateTokens(content);
+    usage = {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    };
+  }
+
   try {
-    const msg = await insertMessage({ chat_id: chatId, role: 'assistant', content, model });
+    const msg = await insertMessage({
+      chat_id: chatId,
+      role: 'assistant',
+      content,
+      model,
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: usage.total_tokens,
+    });
     useChatStore.getState().addMessage(msg);
     await touchChat(chatId);
     await useChatStore.getState().reloadChats();

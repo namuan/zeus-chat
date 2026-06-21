@@ -54,13 +54,40 @@ export function mapApiError(status: number, body: string, providerName?: string)
   };
 }
 
-/** Pull the delta token out of an OpenRouter chunk payload. */
-export function extractDelta(data: string): string | null {
+/** Token usage reported by the provider in the final chunk. */
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+/** A single delta token plus optional usage data from the final chunk. */
+export interface DeltaResult {
+  token: string | null;
+  usage?: TokenUsage;
+}
+
+/** Pull the delta token and optional usage out of a provider chunk payload. */
+export function extractDelta(data: string): DeltaResult | null {
   if (!data || data === '[DONE]') return null;
   try {
     const json = JSON.parse(data);
     const delta = json?.choices?.[0]?.delta?.content;
-    return typeof delta === 'string' ? delta : null;
+    const usage = json?.usage;
+    return {
+      token: typeof delta === 'string' ? delta : null,
+      usage:
+        usage &&
+        typeof usage.prompt_tokens === 'number' &&
+        typeof usage.completion_tokens === 'number' &&
+        typeof usage.total_tokens === 'number'
+          ? {
+              prompt_tokens: usage.prompt_tokens,
+              completion_tokens: usage.completion_tokens,
+              total_tokens: usage.total_tokens,
+            }
+          : undefined,
+    };
   } catch {
     return null;
   }
@@ -92,6 +119,8 @@ export function consumeSSEBuffer(buffer: string): { events: string[]; remainder:
 /**
  * Fetch-based streaming fallback. Used only if the EventSource transport
  * cannot be constructed. Parses SSE manually.
+ *
+ * Returns the full text and any usage data from the final chunk.
  */
 export async function fetchStreamChat(args: {
   url: string;
@@ -100,7 +129,7 @@ export async function fetchStreamChat(args: {
   onToken: (token: string) => void;
   signal: AbortSignal;
   providerName?: string;
-}): Promise<string> {
+}): Promise<{ text: string; usage?: TokenUsage }> {
   const { url, headers, body, onToken, signal, providerName } = args;
   const res = await fetch(url, { method: 'POST', headers, body, signal });
   if (!res.ok) {
@@ -120,6 +149,7 @@ export async function fetchStreamChat(args: {
   const decoder = DecoderCtor ? new DecoderCtor('utf-8') : null;
   let buffer = '';
   let full = '';
+  let finalUsage: TokenUsage | undefined;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -129,15 +159,20 @@ export async function fetchStreamChat(args: {
     const { events, remainder } = consumeSSEBuffer(buffer);
     buffer = remainder;
     for (const data of events) {
-      if (data === '[DONE]') return full;
-      const token = extractDelta(data);
-      if (token) {
-        full += token;
-        onToken(token);
+      if (data === '[DONE]') return { text: full, usage: finalUsage };
+      const result = extractDelta(data);
+      if (result) {
+        if (result.token) {
+          full += result.token;
+          onToken(result.token);
+        }
+        if (result.usage) {
+          finalUsage = result.usage;
+        }
       }
     }
   }
-  return full;
+  return { text: full, usage: finalUsage };
 }
 
 interface StreamReader {

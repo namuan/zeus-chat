@@ -9,11 +9,12 @@ import EventSource, {
 
 import type { ProviderConfig, StreamChatArgs, CompletionArgs, ValidateKeyResult } from '@/lib/providers/types';
 import type { StreamError } from '@/features/chat/chat.types';
-import { extractDelta, fetchStreamChat, mapApiError } from '@/lib/streaming';
+import { extractDelta, fetchStreamChat, mapApiError, type TokenUsage } from '@/lib/streaming';
 import { abortError } from '@/utils/abortController';
 
 /**
- * Stream a chat completion token-by-token. Resolves with the full text.
+ * Stream a chat completion token-by-token. Resolves with the full text
+ * and any token usage reported by the provider.
  * Rejects with a `StreamError` on failure, or an `AbortError` if cancelled.
  *
  * Transport: `react-native-sse` (XHR-based, works in Expo Go without
@@ -26,8 +27,8 @@ export function streamChat({
   signal,
   apiKey,
   provider,
-}: StreamChatArgs): Promise<string> {
-  return new Promise<string>(async (resolve, reject) => {
+}: StreamChatArgs): Promise<{ text: string; usage?: TokenUsage }> {
+  return new Promise<{ text: string; usage?: TokenUsage }>(async (resolve, reject) => {
     if (!apiKey) {
       reject({ code: 'auth', message: `No API key set for ${provider.name}. Add one in Settings.` } as StreamError);
       return;
@@ -43,6 +44,7 @@ export function streamChat({
     const headers = provider.buildHeaders(apiKey);
 
     let full = '';
+    let finalUsage: TokenUsage | undefined;
     let settled = false;
     let es: EventSource | null = null;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,7 +66,7 @@ export function streamChat({
     const resetIdle = () => {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
-        finish(() => resolve(full));
+        finish(() => resolve({ text: full, usage: finalUsage }));
       }, IDLE_TIMEOUT_MS);
     };
 
@@ -83,14 +85,19 @@ export function streamChat({
     const onMessage = (event: MessageEvent) => {
       const data = event.data ?? '';
       if (data === '[DONE]') {
-        finish(() => resolve(full));
+        finish(() => resolve({ text: full, usage: finalUsage }));
         return;
       }
-      const token = extractDelta(data);
-      if (token) {
-        full += token;
-        onToken(token);
-        resetIdle();
+      const result = extractDelta(data);
+      if (result) {
+        if (result.token) {
+          full += result.token;
+          onToken(result.token);
+          resetIdle();
+        }
+        if (result.usage) {
+          finalUsage = result.usage;
+        }
       }
     };
 
@@ -113,7 +120,7 @@ export function streamChat({
       const status = (event as ErrorEvent).xhrStatus ?? 0;
       // Some servers emit a final error event with a 2xx status on completion.
       if (status >= 200 && status < 300) {
-        finish(() => resolve(full));
+        finish(() => resolve({ text: full, usage: finalUsage }));
         return;
       }
       const bodyText = (event as ErrorEvent).message ?? '';
@@ -126,7 +133,7 @@ export function streamChat({
 
     const onClose = (_event: CloseEvent) => {
       // Only fired when we call close(); treat as a safety resolve.
-      finish(() => resolve(full));
+      finish(() => resolve({ text: full, usage: finalUsage }));
     };
 
     const options: EventSourceOptions = {
@@ -148,7 +155,7 @@ export function streamChat({
     } catch {
       // Fallback to fetch-based streaming if EventSource is unavailable.
       try {
-        full = await fetchStreamChat({
+        const fetchResult = await fetchStreamChat({
           url: provider.apiUrl,
           headers,
           body,
@@ -156,7 +163,9 @@ export function streamChat({
           signal,
           providerName: provider.name,
         });
-        finish(() => resolve(full));
+        full = fetchResult.text;
+        finalUsage = fetchResult.usage;
+        finish(() => resolve({ text: full, usage: finalUsage }));
       } catch (err) {
         finish(() => reject(err as StreamError));
       }

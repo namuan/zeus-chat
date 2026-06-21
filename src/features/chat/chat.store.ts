@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { listChats } from '@/db/chat.repo';
 import type { Chat, ChatWithPreview, Message, StreamError } from '@/features/chat/chat.types';
+import { estimateTokens } from '@/lib/tokenizer';
 
 /**
  * Two concerns in one store (per TECH.md's chat.store):
@@ -22,6 +23,11 @@ interface ChatState {
   streamingText: string;
   isStreaming: boolean;
   error: StreamError | null;
+
+  /** Running token totals for the current conversation. */
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
 
   loadActive: (chat: Chat, messages: Message[]) => void;
   clearActive: () => void;
@@ -65,6 +71,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingText: '',
   isStreaming: false,
   error: null,
+  totalPromptTokens: 0,
+  totalCompletionTokens: 0,
+  totalTokens: 0,
 
   loadActive: (chat, messages) =>
     set({
@@ -74,6 +83,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingText: '',
       isStreaming: false,
       error: null,
+      ...computeTokenTotals(messages),
     }),
 
   clearActive: () =>
@@ -84,12 +94,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingText: '',
       isStreaming: false,
       error: null,
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      totalTokens: 0,
       suggestions: [],
       suggestionsLoading: false,
       queuedMessages: [],
     }),
 
-  addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  addMessage: (m) =>
+    set((s) => {
+      const messages = [...s.messages, m];
+      // If the new message has explicit token data, use it; otherwise estimate.
+      let deltaPrompt = 0;
+      let deltaCompletion = 0;
+      let deltaTotal = 0;
+      if (m.total_tokens != null) {
+        deltaPrompt = m.prompt_tokens ?? 0;
+        deltaCompletion = m.completion_tokens ?? 0;
+        deltaTotal = m.total_tokens;
+      } else if (m.role === 'assistant') {
+        deltaCompletion = estimateTokens(m.content);
+        deltaTotal = deltaCompletion;
+      } else if (m.role === 'user') {
+        deltaPrompt = estimateTokens(m.content);
+        deltaTotal = deltaPrompt;
+      }
+      return {
+        messages,
+        totalPromptTokens: s.totalPromptTokens + deltaPrompt,
+        totalCompletionTokens: s.totalCompletionTokens + deltaCompletion,
+        totalTokens: s.totalTokens + deltaTotal,
+      };
+    }),
   updateMessageContent: (id, content) =>
     set((s) => ({
       messages: s.messages.map((m) => (m.id === id ? { ...m, content } : m)),
@@ -131,6 +168,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })),
   clearQueue: () => set({ queuedMessages: [] }),
 }));
+
+/** Sum token totals across an array of messages, falling back to estimation. */
+function computeTokenTotals(messages: Message[]) {
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  let totalTokens = 0;
+
+  for (const m of messages) {
+    if (m.total_tokens != null) {
+      // Use provider-reported data if available.
+      totalPromptTokens += m.prompt_tokens ?? 0;
+      totalCompletionTokens += m.completion_tokens ?? 0;
+      totalTokens += m.total_tokens;
+    } else {
+      // Fall back to client-side estimation.
+      const estimated = estimateTokens(m.content);
+      if (m.role === 'assistant') {
+        totalCompletionTokens += estimated;
+      } else {
+        totalPromptTokens += estimated;
+      }
+      totalTokens += estimated;
+    }
+  }
+
+  return { totalPromptTokens, totalCompletionTokens, totalTokens };
+}
 
 /** Selector helper: the messages to render, with a trailing streaming bubble. */
 export function selectDisplayMessages(state: ChatState): (Message & { streaming?: boolean })[] {

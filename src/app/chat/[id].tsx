@@ -3,17 +3,20 @@ import { useLocalSearchParams, useNavigation, router } from 'expo-router';
 import { setStringAsync } from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatInput } from '@/components/chat/ChatInput';
 import { MessageList } from '@/components/chat/MessageList';
 import { ActionSheet, type ActionItem } from '@/components/ui/ActionSheet';
+import { ContextInfoPanel } from '@/components/ui/ContextInfoPanel';
 import { IconButton } from '@/components/ui/IconButton';
 import { PromptModal } from '@/components/ui/PromptModal';
 import { chatToMarkdown, chatToJson } from '@/features/chat/chat.service';
 import { useChatStore } from '@/features/chat/chat.store';
+import { useSettingsStore } from '@/features/settings/settings.store';
+import { getModelContextLength } from '@/lib/modelContexts';
 import type { Message } from '@/features/chat/chat.types';
 import { useChat } from '@/hooks/useChat';
 import { useTheme } from '@/hooks/useTheme';
@@ -51,6 +54,30 @@ export default function ChatScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: string; text: string } | null>(null);
   const [rawMode, setRawMode] = useState(false);
+  const [contextInfoVisible, setContextInfoVisible] = useState(false);
+
+  // Token usage totals from the active chat.
+  const totalTokens = useChatStore((s) => s.totalTokens);
+
+  // Current model + its context window from settings.
+  const settingsProvider = useSettingsStore((s) => s.provider);
+  const settingsModel = useSettingsStore((s) => s.models[settingsProvider]);
+  const availableModels = useSettingsStore((s) => s.availableModels);
+  const currentModelId = settingsModel ?? undefined;
+  const currentModelInfo = availableModels.find((m) => m.id === currentModelId);
+  const contextLength =
+    currentModelInfo?.contextLength ??
+    (currentModelId ? getModelContextLength(currentModelId) : 0) ??
+    0;
+  const fetchAvailableModels = useSettingsStore((s) => s.fetchAvailableModels);
+  const modelsLoading = useSettingsStore((s) => s.modelsLoading);
+
+  // Proactively fetch the model list so context sizes are available.
+  useEffect(() => {
+    if (availableModels.length === 0 && !modelsLoading) {
+      fetchAvailableModels();
+    }
+  }, [availableModels.length, modelsLoading, fetchAvailableModels]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -218,6 +245,9 @@ export default function ChatScreen() {
           isStreaming={isStreaming}
           queuedCount={queuedMessages.length}
           initialText={initialPrompt}
+          contextUsed={totalTokens}
+          contextTotal={contextLength}
+          onContextPress={() => setContextInfoVisible(true)}
         />
       </View>
 
@@ -252,6 +282,14 @@ export default function ChatScreen() {
         title={activeChat?.title ?? 'Chat'}
         items={menuItems}
         onClose={() => setMenuVisible(false)}
+      />
+
+      <ContextInfoPanel
+        visible={contextInfoVisible}
+        onClose={() => setContextInfoVisible(false)}
+        used={totalTokens}
+        total={contextLength}
+        modelName={currentModelId}
       />
     </KeyboardAvoidingView>
   );

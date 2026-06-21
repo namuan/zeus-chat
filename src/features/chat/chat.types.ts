@@ -21,6 +21,10 @@ export interface Message {
   queued?: boolean;
   /** The model that generated this response (assistant messages only). */
   model?: string;
+  /** Token usage reported by the provider (assistant messages only). */
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 }
 
 /** Chat row enriched with a last-message preview for list screens. */

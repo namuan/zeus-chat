@@ -58,6 +58,23 @@ export async function migrate(db: SQLiteDatabase): Promise<void> {
     // Column already exists — ignore.
   }
 
+  // v5: add token usage columns to messages.
+  try {
+    await db.execAsync(`ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER`);
+  } catch {
+    // Column already exists — ignore.
+  }
+  try {
+    await db.execAsync(`ALTER TABLE messages ADD COLUMN completion_tokens INTEGER`);
+  } catch {
+    // Column already exists — ignore.
+  }
+  try {
+    await db.execAsync(`ALTER TABLE messages ADD COLUMN total_tokens INTEGER`);
+  } catch {
+    // Column already exists — ignore.
+  }
+
   // Enforce cascade deletes at runtime (SQLite needs PRAGMA per connection).
   await db.execAsync('PRAGMA foreign_keys = ON;');
 }
