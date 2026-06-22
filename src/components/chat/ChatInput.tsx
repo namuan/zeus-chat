@@ -140,14 +140,14 @@ export function ChatInput({
                   styles.actionBtn,
                   styles.queueBtn,
                   {
-                    backgroundColor: canSend ? colors.warning + '20' : 'transparent',
-                    opacity: canSend ? (pressed ? 0.7 : 1) : 0.4,
+                    backgroundColor: canSend ? colors.warning : colors.surface,
+                    opacity: canSend ? (pressed ? 0.7 : 1) : 1,
                   },
                 ]}>
                 <Ionicons
                   name="time-outline"
                   size={18}
-                  color={canSend ? colors.warning : colors.textMuted}
+                  color={canSend ? colors.warningText : colors.textMuted}
                 />
                 {queuedCount > 0 && (
                   <View style={[styles.queueBadge, { backgroundColor: colors.danger }]}>
